@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Calendar, Users, Home, HelpCircle } from 'lucide-react';
 import clsx from 'clsx';
+import Auth from './Auth';
 
 export default function Layout() {
     const location = useLocation();
@@ -17,21 +18,24 @@ export default function Layout() {
             <header className="bg-white shadow-sm sticky top-0 z-10">
                 <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
                     <h1 className="text-xl font-bold text-indigo-600">Volunteer Sched</h1>
-                    <nav className="hidden md:flex space-x-6">
-                        {navItems.map((item) => (
-                            <Link
-                                key={item.path}
-                                to={item.path}
-                                className={clsx(
-                                    "flex items-center space-x-2 text-sm font-medium transition-colors hover:text-indigo-600",
-                                    location.pathname === item.path ? "text-indigo-600" : "text-gray-500"
-                                )}
-                            >
-                                <item.icon className="w-4 h-4" />
-                                <span>{item.name}</span>
-                            </Link>
-                        ))}
-                    </nav>
+                    <div className="flex items-center gap-4">
+                        <nav className="hidden md:flex space-x-6">
+                            {navItems.map((item) => (
+                                <Link
+                                    key={item.path}
+                                    to={item.path}
+                                    className={clsx(
+                                        "flex items-center space-x-2 text-sm font-medium transition-colors hover:text-indigo-600",
+                                        location.pathname === item.path ? "text-indigo-600" : "text-gray-500"
+                                    )}
+                                >
+                                    <item.icon className="w-4 h-4" />
+                                    <span>{item.name}</span>
+                                </Link>
+                            ))}
+                        </nav>
+                        <Auth />
+                    </div>
                 </div>
             </header>
 
@@ -57,6 +61,6 @@ export default function Layout() {
                     ))}
                 </div>
             </nav>
-        </div>
+        </div >
     );
 }
