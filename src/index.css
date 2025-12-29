@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+    --font-sans: 'Inter', sans-serif;
+}
+
+body {
+    font-family: var(--font-sans);
+    @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+/* Custom scrollbar for better look */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+}
+
+@media screen {
+    .only-print {
+        display: none !important;
+    }
+}
+
+@media print {
+
+    .only-print {
+        display: block !important;
+    }
+
+    /* Hide navigation, buttons, and other non-essential elements */
+    header,
+    nav,
+    button,
+    select,
+    .no-print {
+        display: none !important;
+    }
+
+    /* Ensure main content takes full width */
+    main {
+        max-width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* Remove shadows and backgrounds for clean print */
+    .shadow-sm,
+    .shadow-lg {
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+    }
+
+    /* Compact Typography & Spacing */
+    body {
+        font-size: 9pt !important;
+        -webkit-print-color-adjust: exact !important;
+        color: #000 !important;
+    }
+
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+
+    thead {
+        display: table-header-group;
+        border-bottom: 2px solid #000 !important;
+    }
+
+    th {
+        font-size: 8pt !important;
+        color: #000 !important;
+        text-transform: uppercase;
+        padding: 2px 4px !important;
+    }
+
+    tr {
+        page-break-inside: avoid;
+        border-bottom: 1px solid #666 !important;
+    }
+
+    td {
+        padding: 2px 4px !important;
+        font-size: 9pt !important;
+        vertical-align: middle !important;
+    }
+
+    /* Custom tweaks for specific columns if we added classes */
+    .table-cell-compact {
+        padding: 2px 4px !important;
+    }
+
+    /* Force background colors for print if needed (browsers might strip them) */
+    * {
+        print-color-adjust: exact !important;
+        -webkit-print-color-adjust: exact !important;
+    }
+}
