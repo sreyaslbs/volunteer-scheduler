@@ -1,22 +1,45 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Calendar, Users, Home, HelpCircle, LogOut } from 'lucide-react';
+import { useEffect } from 'react';
+import { Calendar, Users, Home, HelpCircle, ShieldAlert, User as UserIcon } from 'lucide-react';
 import clsx from 'clsx';
-import { useState, useEffect } from 'react';
 import { auth } from '../lib/firebase';
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { useAuth } from '../lib/hooks';
 
 export default function Layout() {
     const location = useLocation();
-    const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { user, loading } = useAuth();
 
+    // Theme Management
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, []);
+        const applyTheme = (isDark: boolean) => {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        };
+
+        if (user && (user.role === 'Manager' || user.role === 'Admin')) {
+            // Manager: Trust DB preference (if explicit), fallback to local, then DEFAULT DARK
+            if (typeof user.darkMode === 'boolean') {
+                applyTheme(user.darkMode);
+                localStorage.setItem('theme', user.darkMode ? 'dark' : 'light');
+            } else {
+                const localTheme = localStorage.getItem('theme');
+                // Default to DARK if no local theme
+                applyTheme(localTheme ? localTheme === 'dark' : true);
+            }
+        } else {
+            // Non-manager: Local storage or DEFAULT DARK
+            const localTheme = localStorage.getItem('theme');
+            if (localTheme) {
+                applyTheme(localTheme === 'dark');
+            } else {
+                applyTheme(true);
+            }
+        }
+    }, [user]);
 
     const login = async () => {
         try {
@@ -28,38 +51,34 @@ export default function Layout() {
         }
     };
 
-    const logout = async () => {
-        try {
-            await signOut(auth);
-        } catch (error) {
-            console.error("Logout failed", error);
-        }
-    };
+
 
     const navItems = [
-        { name: 'Dashboard', path: '/', icon: Home },
-        { name: 'Schedule', path: '/schedule', icon: Calendar },
-        { name: 'Summary', path: '/volunteers', icon: Users },
-        { name: 'Help', path: '/help', icon: HelpCircle },
-    ];
+        { name: 'Dashboard', path: '/', icon: Home, roles: ['Admin', 'Manager', 'Volunteer'] },
+        { name: 'Schedule', path: '/schedule', icon: Calendar, roles: ['Admin', 'Manager'] },
+        { name: 'Availability', path: '/availability', icon: ShieldAlert, roles: ['Admin', 'Manager'] },
+        { name: 'Summary', path: '/volunteers', icon: Users, roles: ['Admin', 'Manager', 'Volunteer'] },
+        { name: 'Profile', path: '/profile', icon: UserIcon, roles: ['Admin', 'Manager', 'Volunteer'] },
+        { name: 'Help', path: '/help', icon: HelpCircle, roles: ['Admin', 'Manager'] },
+    ].filter(item => item.roles.includes(user?.role || 'Volunteer'));
 
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <div className="text-gray-500">Loading...</div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+                <div className="text-gray-500 dark:text-gray-400">Loading...</div>
             </div>
         );
     }
 
     if (!user) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-                <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
-                    <div className="mx-auto w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center mb-4">
-                        <Users className="w-6 h-6 text-indigo-600" />
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors duration-200">
+                <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center transition-colors duration-200">
+                    <div className="mx-auto w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 rounded-full flex items-center justify-center mb-4 transition-colors duration-200">
+                        <Users className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome Back</h1>
-                    <p className="text-gray-500 mb-8">Please sign in to access the Volunteer Scheduler</p>
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome Back</h1>
+                    <p className="text-gray-500 dark:text-gray-400 mb-8">Please sign in to access the Volunteer Scheduler</p>
 
                     <button
                         onClick={login}
@@ -74,19 +93,49 @@ export default function Layout() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
-            <header className="bg-white shadow-sm sticky top-0 z-10">
-                <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <h1 className="text-xl font-bold text-indigo-600">Volunteer Sched</h1>
-                    <div className="flex items-center gap-4">
-                        <nav className="hidden md:flex space-x-6">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100 flex flex-col font-sans text-gray-900 relative transition-colors duration-200">
+            {/* Watermark */}
+            <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-5 overflow-hidden">
+                <img src="/parish-logo.png" className="w-[500px] h-[500px] md:w-[800px] md:h-[800px] object-contain grayscale" alt="Watermark" />
+            </div>
+
+            <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10 flex flex-col transition-colors duration-200">
+                {/* Top Brand Section - Centered with Logos */}
+                <div className="w-full bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 transition-colors duration-200">
+                    <div className="max-w-5xl mx-auto px-4 flex justify-center items-center gap-3 md:gap-6">
+
+                        {/* Left Emblem - Parish Logo */}
+                        <div className="flex-shrink-0">
+                            <img src="/parish-logo.png" alt="Parish Logo" className="w-16 h-16 md:w-28 md:h-28 object-contain" />
+                        </div>
+
+                        {/* Center Text */}
+                        <div className="text-center px-2">
+                            <h1 className="text-sm md:text-2xl font-extrabold text-indigo-900 dark:text-indigo-400 leading-tight tracking-tight">OUR LADY OF THE PILLAR PARISH</h1>
+                            <p className="text-[10px] md:text-sm font-bold text-indigo-600 dark:text-indigo-300 tracking-widest mt-0.5 md:mt-2 uppercase">Ministry of Lectors, Commentators and Psalmists</p>
+                        </div>
+
+                        {/* Right Emblem - Ministry Logo */}
+                        <div className="flex-shrink-0">
+                            <img src="/ministry-logo.png" alt="Ministry Logo" className="w-16 h-16 md:w-28 md:h-28 object-contain" />
+                        </div>
+
+                    </div>
+                </div>
+
+                {/* Desktop Navigation Tabs - Below Header */}
+                <div className="hidden md:block bg-white/95 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
+                    <div className="max-w-4xl mx-auto px-4">
+                        <nav className="flex justify-center space-x-1">
                             {navItems.map((item) => (
                                 <Link
                                     key={item.path}
                                     to={item.path}
                                     className={clsx(
-                                        "flex items-center space-x-2 text-sm font-medium transition-colors hover:text-indigo-600",
-                                        location.pathname === item.path ? "text-indigo-600" : "text-gray-500"
+                                        "flex items-center space-x-2 px-6 py-3 text-sm font-medium transition-all border-b-2",
+                                        location.pathname === item.path
+                                            ? "text-indigo-600 dark:text-indigo-400 border-indigo-600 dark:border-indigo-400 bg-indigo-50/30 dark:bg-indigo-900/20"
+                                            : "text-gray-500 dark:text-gray-400 border-transparent hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     )}
                                 >
                                     <item.icon className="w-4 h-4" />
@@ -94,19 +143,6 @@ export default function Layout() {
                                 </Link>
                             ))}
                         </nav>
-
-                        <div className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                            {user.photoURL && (
-                                <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full border border-gray-200" />
-                            )}
-                            <button
-                                onClick={logout}
-                                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                                title="Sign Out"
-                            >
-                                <LogOut className="w-5 h-5" />
-                            </button>
-                        </div>
                     </div>
                 </div>
             </header>
@@ -116,7 +152,7 @@ export default function Layout() {
             </main>
 
             {/* Mobile Bottom Navigation */}
-            <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-20 pb-safe">
+            <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-20 pb-safe transition-colors duration-200">
                 <div className="flex justify-around items-center h-16">
                     {navItems.map((item) => (
                         <Link
@@ -124,22 +160,17 @@ export default function Layout() {
                             to={item.path}
                             className={clsx(
                                 "flex flex-col items-center justify-center w-full h-full space-y-1",
-                                location.pathname === item.path ? "text-indigo-600" : "text-gray-400"
+                                location.pathname === item.path ? "text-indigo-600 dark:text-indigo-400" : "text-gray-400 dark:text-gray-500"
                             )}
                         >
                             <item.icon className="w-5 h-5" />
                             <span className="text-[10px] uppercase font-semibold">{item.name}</span>
                         </Link>
                     ))}
-                    <button
-                        onClick={logout}
-                        className="flex flex-col items-center justify-center w-full h-full space-y-1 text-gray-400 hover:text-red-600"
-                    >
-                        <LogOut className="w-5 h-5" />
-                        <span className="text-[10px] uppercase font-semibold">Logout</span>
-                    </button>
+
                 </div>
             </nav>
         </div>
     );
 }
+

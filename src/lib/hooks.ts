@@ -1,7 +1,95 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, Timestamp, doc, updateDoc, writeBatch, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, Timestamp, doc, updateDoc, writeBatch, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { auth } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { db } from './firebase';
-import type { Volunteer } from '../types';
+import type { Volunteer, AppUser, UserRole } from '../types';
+
+const ADMIN_EMAIL = 'mailsuren2019@gmail.com';
+
+export const useAuth = () => {
+    const [user, setUser] = useState<AppUser | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                // Determine Role
+                let role: UserRole = 'Volunteer';
+
+                let darkMode = false;
+
+                if (firebaseUser.email === ADMIN_EMAIL) {
+                    role = 'Admin';
+                    // Admins are also managers effectively, check if they have a manager doc for prefs
+                    const managerDoc = await getDoc(doc(db, 'managers', firebaseUser.email));
+                    if (managerDoc.exists()) {
+                        darkMode = managerDoc.data()?.darkMode || false;
+                    }
+                } else if (firebaseUser.email) {
+                    // Check Firestore for Manager role
+                    const managerDoc = await getDoc(doc(db, 'managers', firebaseUser.email));
+                    if (managerDoc.exists()) {
+                        role = 'Manager';
+                        darkMode = managerDoc.data()?.darkMode || false;
+                    }
+                }
+
+                setUser({
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    displayName: firebaseUser.displayName,
+                    photoURL: firebaseUser.photoURL,
+                    role,
+                    darkMode
+                });
+            } else {
+                setUser(null);
+            }
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    return { user, loading, isAdmin: user?.role === 'Admin', isManager: user?.role === 'Manager' || user?.role === 'Admin' };
+};
+
+export const useManagers = () => {
+    const [managers, setManagers] = useState<{ email: string }[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchManagers = async () => {
+        setLoading(true);
+        try {
+            const snapshot = await getDocs(collection(db, 'managers'));
+            const list = snapshot.docs.map(d => ({ email: d.id }));
+            setManagers(list);
+        } catch (e) {
+            console.error("Error fetching managers", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const addManager = async (email: string) => {
+        const cleanedEmail = email.trim().toLowerCase();
+        if (!cleanedEmail) return;
+        await setDoc(doc(db, 'managers', cleanedEmail), { addedAt: Timestamp.now() });
+        fetchManagers();
+    };
+
+    const removeManager = async (email: string) => {
+        await deleteDoc(doc(db, 'managers', email));
+        fetchManagers();
+    };
+
+    useEffect(() => {
+        fetchManagers();
+    }, []);
+
+    return { managers, loading, addManager, removeManager };
+};
 
 export const useVolunteers = () => {
     const [volunteers, setVolunteers] = useState<Volunteer[]>([]);
@@ -18,10 +106,18 @@ export const useVolunteers = () => {
 
             const querySnapshot = await Promise.race([snapshotPromise, timeoutPromise]) as any;
 
-            const vList: Volunteer[] = querySnapshot.docs.map((d: any) => ({
-                id: d.id,
-                ...d.data()
-            })) as Volunteer[];
+            const vList: Volunteer[] = querySnapshot.docs.map((d: any) => {
+                const data = d.data();
+                // Migration: Add default values for new fields if they don't exist
+                return {
+                    id: d.id,
+                    ...data,
+                    volunteerLevel: data.volunteerLevel || 'Volunteer', // Existing volunteers default to 'Volunteer' level
+                    availabilityMode: data.availabilityMode || 'always',
+                    availableTimeSlots: data.availableTimeSlots || [],
+                    unavailableTimeSlots: data.unavailableTimeSlots || []
+                };
+            }) as Volunteer[];
             setVolunteers(vList);
             localStorage.setItem('volunteers_cache', JSON.stringify(vList));
         } catch (e) {
@@ -57,7 +153,9 @@ export const useVolunteers = () => {
                 id: docRef.id,
                 name,
                 roles: ['Lector1', 'Commentator'],
-                unavailableDates: []
+                unavailableDates: [],
+                volunteerLevel: 'Lector', // New volunteers default to Lector level
+                availabilityMode: 'always' // Default to always available
             };
 
             // Optimistic update
@@ -68,7 +166,9 @@ export const useVolunteers = () => {
             await setDoc(docRef, {
                 name,
                 roles: ['Lector1', 'Commentator'],
-                unavailableDates: []
+                unavailableDates: [],
+                volunteerLevel: 'Lector',
+                availabilityMode: 'always'
             });
         } catch (e) {
             console.error("Error adding volunteer (background sync failed)", e);
@@ -89,11 +189,14 @@ export const useVolunteers = () => {
     const seedVolunteers = async (names: string[]) => {
         try {
             // 1. Generate local objects immediately with random IDs (or valid Firestore IDs)
+            // Existing volunteers get 'Volunteer' level (experienced)
             const newVolunteers: Volunteer[] = names.map(name => ({
                 id: doc(collection(db, 'volunteers')).id, // Generate ID locally
                 name,
                 roles: ['Lector1', 'Commentator'],
-                unavailableDates: []
+                unavailableDates: [],
+                volunteerLevel: 'Volunteer', // Seeded volunteers are experienced
+                availabilityMode: 'always'
             }));
 
             // 2. Optimistic UI update
@@ -110,7 +213,9 @@ export const useVolunteers = () => {
                 batch.set(docRef, {
                     name: v.name,
                     roles: v.roles,
-                    unavailableDates: v.unavailableDates
+                    unavailableDates: v.unavailableDates,
+                    volunteerLevel: v.volunteerLevel,
+                    availabilityMode: v.availabilityMode
                 });
             });
 
@@ -188,7 +293,71 @@ export const useVolunteers = () => {
         }
     };
 
-    return { volunteers, loading, addVolunteer, updateAvailability, seedVolunteers, removeFutureAssignments, toggleVolunteerStatus };
+    const updateVolunteerLevel = async (id: string, level: 'Lector' | 'Volunteer') => {
+        try {
+            const ref = doc(db, 'volunteers', id);
+            await updateDoc(ref, { volunteerLevel: level });
+            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, volunteerLevel: level } : v));
+        } catch (e) {
+            console.error("Error updating volunteer level", e);
+        }
+    };
+
+    const updateTimeAvailability = async (
+        id: string,
+        mode: 'always' | 'except' | 'only',
+        availableSlots?: { start: string; end: string }[],
+        unavailableSlots?: { start: string; end: string }[]
+    ) => {
+        try {
+            const ref = doc(db, 'volunteers', id);
+            const updateData: any = {
+                availabilityMode: mode,
+                availableTimeSlots: availableSlots || [],
+                unavailableTimeSlots: unavailableSlots || []
+            };
+            await updateDoc(ref, updateData);
+            setVolunteers(prev => prev.map(v => v.id === id ? {
+                ...v,
+                availabilityMode: mode,
+                availableTimeSlots: availableSlots,
+                unavailableTimeSlots: unavailableSlots
+            } : v));
+        } catch (e) {
+            console.error("Error updating time availability", e);
+        }
+    };
+
+    const deleteVolunteer = async (id: string) => {
+        if (!window.confirm("Are you sure you want to delete this volunteer? This action cannot be undone.")) return;
+        try {
+            await deleteDoc(doc(db, 'volunteers', id));
+            setVolunteers(prev => prev.filter(v => v.id !== id));
+            // Also update cache
+            const cached = localStorage.getItem('volunteers_cache');
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                const updated = parsed.filter((v: any) => v.id !== id);
+                localStorage.setItem('volunteers_cache', JSON.stringify(updated));
+            }
+        } catch (e) {
+            console.error("Error deleting volunteer", e);
+            alert("Failed to delete volunteer.");
+        }
+    };
+
+    return {
+        volunteers,
+        loading,
+        addVolunteer,
+        deleteVolunteer,
+        updateAvailability,
+        seedVolunteers,
+        removeFutureAssignments,
+        toggleVolunteerStatus,
+        updateVolunteerLevel,
+        updateTimeAvailability
+    };
 };
 
 // ... existing export useVolunteers ...

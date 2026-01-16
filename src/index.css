@@ -98,9 +98,157 @@ body {
         vertical-align: middle !important;
     }
 
+    /* Calendar View Specific Print Optimizer */
+    @page {
+        size: landscape;
+        margin: 5mm !important;
+        /* Add small margin back */
+    }
+
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        /* Remove all padding */
+        width: 100vw !important;
+        height: 100vh !important;
+        overflow: hidden !important;
+        transform-origin: top left;
+    }
+
+    /* Target the main container directly */
+    .calendar-view-container {
+        width: 100% !important;
+        zoom: 48% !important;
+        /* drastically reduce to ensure fit */
+        /* transform: scale(...) removed to avoid layout space issues */
+        margin: 0 !important;
+        border: none !important;
+        display: block !important;
+        background: transparent !important;
+    }
+
+    /* Override "Current Day" highlighting for print */
+    .calendar-view-container .bg-blue-50 {
+        background: transparent !important;
+    }
+
+    .calendar-view-container .text-blue-600 {
+        color: #374151 !important;
+        /* text-gray-700 */
+    }
+
+    /* Bold separation for headers */
+    .calendar-view-container .grid.border-b>div {
+        border-right: 1.5px solid #000 !important;
+        border-bottom: 1.5px solid #000 !important;
+    }
+
+    /* Bold borders for date cells */
+    .calendar-view-container .min-h-\[120px\] {
+        min-height: auto !important;
+        height: auto !important;
+        border-right: 1.5px solid #000 !important;
+        border-bottom: 1.5px solid #000 !important;
+    }
+
+    /* SPECIFIC FIX: Ensure empty padding cells behave */
+    .calendar-view-container .min-h-\[120px\].bg-gray-50 {
+        display: block !important;
+        min-height: 40px !important;
+        /* Give them some height to maintain row structure if empty */
+        height: auto !important;
+        background: transparent !important;
+        border-right: 1.5px solid #000 !important;
+        border-bottom: 1.5px solid #000 !important;
+    }
+
+    /* Remove any grid gaps that might cause overflow */
+    .calendar-view-container .grid {
+        gap: 0 !important;
+    }
+
+    /* Outer border for the whole calendar */
+    .calendar-view-container {
+        border: 1.5px solid #000 !important;
+    }
+
+    /* Ensure content is transparent so watermark shows */
+    .calendar-view-container,
+    .calendar-view-container>div,
+    .calendar-view-container .bg-white {
+        background: transparent !important;
+    }
+
+    /* Watermark visibility in print */
+    .opacity-5 {
+        opacity: 0.1 !important;
+        /* Slightly more visible for print */
+    }
+
+    /* Compact Typography */
+    .calendar-view-container .text-xs,
+    .calendar-view-container .text-sm,
+    .calendar-view-container .font-semibold,
+    .calendar-view-container .font-bold {
+        font-size: 8pt !important;
+        line-height: 0.9 !important;
+        /* Very tight lines */
+    }
+
+    /* Compact the day cell content */
+    .calendar-view-container .space-y-1>div {
+        margin-bottom: 0px !important;
+        /* No margin between masses */
+        padding: 0px 2px !important;
+        /* Minimal padding */
+        border: 1px solid #ddd !important;
+    }
+
+    /* Reduce Header Size */
+    .only-print h1 {
+        font-size: 14pt !important;
+        margin-bottom: 1mm !important;
+    }
+
+    .only-print {
+        margin-top: 10mm !important;
+        /* Space above header */
+        margin-bottom: 5mm !important;
+        /* Space below header */
+        padding-bottom: 1mm !important;
+    }
+
+    /* Hide day number to save space if needed or make it tiny */
+    .calendar-view-container .text-sm.font-semibold.mb-1 {
+        font-size: 7pt !important;
+        margin-bottom: 0 !important;
+        text-align: right;
+        /* Move to corner */
+        padding-right: 2px;
+    }
+
+    /* Avoid breaks inside individual cells, NOT the whole grid */
+    .calendar-view-container .min-h-\[120px\],
+    .calendar-view-container .min-h-\[120px\].bg-gray-50 {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    /* Remove the generic rule that was causing the grid to jump */
+    /* tr, .grid, .flex { page-break-inside: avoid !important; } */
+
     /* Custom tweaks for specific columns if we added classes */
     .table-cell-compact {
         padding: 2px 4px !important;
+    }
+
+    /* Calendar grid print styles */
+    .grid {
+        display: grid !important;
+    }
+
+    .grid-cols-7 {
+        grid-template-columns: repeat(7, 1fr) !important;
     }
 
     /* Force background colors for print if needed (browsers might strip them) */

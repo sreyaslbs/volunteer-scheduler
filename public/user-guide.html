@@ -10,6 +10,7 @@
             body {
                 margin: 0;
                 padding: 20px;
+                color: #000;
             }
 
             .page-break {
@@ -17,18 +18,23 @@
             }
 
             a {
-                color: #000;
                 text-decoration: none;
+                color: #000;
+            }
+
+            .no-print {
+                display: none;
             }
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 40px 20px;
-            color: #333;
+            color: #1F2937;
+            background-color: #F9FAFB;
         }
 
         h1 {
@@ -36,83 +42,88 @@
             border-bottom: 3px solid #4F46E5;
             padding-bottom: 10px;
             margin-bottom: 30px;
+            font-size: 2.5em;
         }
 
         h2 {
-            color: #4F46E5;
-            margin-top: 30px;
-            margin-bottom: 15px;
+            color: #111827;
+            margin-top: 40px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #E5E7EB;
+            padding-bottom: 10px;
         }
 
         h3 {
-            color: #6366F1;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }
-
-        .url-box {
-            background: #F3F4F6;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            font-size: 18px;
-            text-align: center;
-            border: 2px solid #4F46E5;
-        }
-
-        .url-box a {
             color: #4F46E5;
-            font-weight: bold;
-            text-decoration: none;
+            margin-top: 25px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .section {
+            background: #FFFFFF;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
         }
 
         .step {
-            background: #F9FAFB;
+            background: #F3F4F6;
             padding: 15px;
             margin: 15px 0;
             border-left: 4px solid #4F46E5;
-            border-radius: 4px;
+            border-radius: 6px;
+            display: flex;
+            align-items: flex-start;
         }
 
         .step-number {
-            display: inline-block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             background: #4F46E5;
             color: white;
-            width: 30px;
+            min-width: 30px;
             height: 30px;
             border-radius: 50%;
-            text-align: center;
-            line-height: 30px;
-            margin-right: 10px;
             font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
         }
 
         .tip {
             background: #FEF3C7;
             border-left: 4px solid #F59E0B;
-            padding: 12px;
-            margin: 15px 0;
-            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 6px;
+            color: #92400E;
         }
 
         .tip::before {
             content: "💡 TIP: ";
             font-weight: bold;
-            color: #F59E0B;
+            color: #D97706;
         }
 
         .warning {
             background: #FEE2E2;
             border-left: 4px solid #EF4444;
-            padding: 12px;
-            margin: 15px 0;
-            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 6px;
+            color: #B91C1C;
         }
 
         .warning::before {
             content: "⚠️ IMPORTANT: ";
             font-weight: bold;
-            color: #EF4444;
+            color: #DC2626;
         }
 
         ul {
@@ -124,331 +135,228 @@
             margin: 8px 0;
         }
 
-        .feature-list {
+        .feature-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
             margin: 20px 0;
         }
 
-        .feature {
-            background: white;
+        .feature-card {
+            background: #F9FAFB;
             border: 1px solid #E5E7EB;
-            padding: 12px;
-            border-radius: 6px;
+            padding: 20px;
+            border-radius: 8px;
         }
 
-        .feature strong {
-            color: #4F46E5;
+        .feature-card h4 {
+            margin-top: 0;
+            color: #4B5563;
+            text-transform: uppercase;
+            font-size: 0.85em;
+            letter-spacing: 0.05em;
         }
 
         code {
-            background: #F3F4F6;
+            background: #E5E7EB;
             padding: 2px 6px;
-            border-radius: 3px;
+            border-radius: 4px;
             font-family: 'Courier New', monospace;
             font-size: 0.9em;
+            color: #374151;
         }
+
+        .screenshot-placeholder {
+            background: #E5E7EB;
+            border: 2px dashed #9CA3AF;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            color: #6B7280;
+            margin: 15px 0;
+        }
+        
+        .role-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: bold;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+        
+        .role-admin { background: #E0E7FF; color: #4338CA; }
+        .role-volunteer { background: #ECFDF5; color: #047857; }
     </style>
 </head>
 
 <body>
-    <h1>📅 Mass Volunteer Scheduler - User Guide</h1>
-
-    <div class="url-box">
-        <strong>Access the app at:</strong><br>
-        <a href="https://mass-volunteer-scheduler.web.app">https://mass-volunteer-scheduler.web.app</a>
+    <div class="section">
+        <h1>📅 Mass Volunteer Scheduler</h1>
+        <p class="lead">Welcome to the digital scheduling system for our mass ministry. This guide will help you navigate the application, check your assignments, and manage schedules effectively.</p>
     </div>
 
-    <h2>🚀 Getting Started</h2>
-
-    <div class="step">
-        <span class="step-number">1</span>
-        <strong>Open the App</strong><br>
-        Visit the URL above in any web browser (Chrome, Firefox, Safari, Edge)
-    </div>
-
-    <div class="step">
-        <span class="step-number">2</span>
-        <strong>Sign In</strong><br>
-        Click "Sign in with Google" and use your church Google account
-    </div>
-
-    <div class="warning">
-        Make sure you're using the authorized Google account. Contact the administrator if you can't sign in.
-    </div>
-
-    <div class="page-break"></div>
-
-    <h2>📱 Installing on Your Phone (Optional)</h2>
-
-    <p>You can install this app on your phone like a native app! No App Store needed.</p>
-
-    <h3>Android (Chrome/Edge)</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Open the app URL in Chrome browser
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Tap the <strong>menu (⋮)</strong> in the top right corner
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">4</span>
-        Tap <strong>"Install"</strong> in the popup
-    </div>
-    <div class="step">
-        <span class="step-number">5</span>
-        The app icon will appear on your home screen!
-    </div>
-
-    <h3>iPhone/iPad (Safari)</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Open the app URL in Safari browser
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Tap the <strong>Share button</strong> (square with arrow pointing up)
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Scroll down and tap <strong>"Add to Home Screen"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">4</span>
-        Tap <strong>"Add"</strong> in the top right
-    </div>
-    <div class="step">
-        <span class="step-number">5</span>
-        The app icon will appear on your home screen!
-    </div>
-
-    <div class="tip">
-        Once installed, the app works like a regular mobile app with its own icon and can work offline for basic
-        features!
-    </div>
-
-    <div class="page-break"></div>
-
-    <h2>👥 Managing Volunteers</h2>
-
-    <h3>Adding Volunteers</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Go to the <strong>"Volunteers"</strong> tab in the navigation menu
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Click <strong>"Add New Volunteer"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Enter the volunteer's name and click <strong>"Add"</strong>
-    </div>
-
-    <div class="tip">
-        Add all your volunteers before generating the schedule for best results.
-    </div>
-
-    <h3>Managing Volunteer Availability</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Go to the <strong>"Update Availability"</strong> tab
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Click on any volunteer's name to open their calendar
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Click on dates when they are <strong>unavailable</strong> (dates turn red)
-    </div>
-    <div class="step">
-        <span class="step-number">4</span>
-        Click <strong>"Save Changes"</strong> when done
-    </div>
-
-    <h3>Marking a Volunteer as Unavailable Indefinitely</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Open the volunteer's calendar (click their name)
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Check the box: <strong>"Mark as Unavailable Indefinitely"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        This prevents them from being assigned to future schedules
-    </div>
-
-    <div class="tip">
-        Use this for volunteers on extended leave or who have temporarily stopped serving.
-    </div>
-
-    <div class="page-break"></div>
-
-    <h2>📆 Creating & Managing Schedules</h2>
-
-    <h3>Generating a New Monthly Schedule</h3>
-    <div class="step">
-        <span class="step-number">1</span>
-        Go to the <strong>"Schedule"</strong> tab
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Select the <strong>Month</strong> and <strong>Year</strong> from the dropdowns
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Click <strong>"Generate Schedule"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">4</span>
-        The app will automatically assign volunteers to all masses
-    </div>
-
-    <div class="warning">
-        The schedule considers volunteer availability and ensures fair distribution of assignments.
-    </div>
-
-    <h3>Adding Special Masses</h3>
-    <p>For Christmas, Easter, or other special occasions:</p>
-    <div class="step">
-        <span class="step-number">1</span>
-        In the Schedule tab, click <strong>"+ Add Special Mass"</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Select the <strong>Date and Time</strong>
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        Enter a name (e.g., "Christmas Eve Mass")
-    </div>
-    <div class="step">
-        <span class="step-number">4</span>
-        Manually assign volunteers to each role
-    </div>
-    <div class="step">
-        <span class="step-number">5</span>
-        Click <strong>"Add Mass"</strong>
-    </div>
-
-    <h3>Regenerating the Schedule</h3>
-    <p>If you want to create new assignments with different volunteers:</p>
-    <div class="step">
-        <span class="step-number">1</span>
-        Click the <strong>"Regenerate"</strong> button
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        The app will create new assignments while keeping Special Masses
-    </div>
-
-    <div class="tip">
-        Regenerate if you're not happy with the initial assignments or if volunteer availability changes.
-    </div>
-
-    <div class="page-break"></div>
-
-    <h2>📋 Understanding the Schedule</h2>
-
-    <h3>Schedule Table Columns</h3>
-    <ul>
-        <li><strong>Date:</strong> The day of the mass</li>
-        <li><strong>Time:</strong> Mass time (e.g., 6:00 AM, 7:30 AM)</li>
-        <li><strong>Type:</strong> Weekday, Sunday, or Special</li>
-        <li><strong>Lector1:</strong> First reader</li>
-        <li><strong>Commentator:</strong> Commentator for the mass</li>
-        <li><strong>Lector2:</strong> Second reader (Sunday masses only)</li>
-    </ul>
-
-    <h3>Mass Types & Attire</h3>
-    <div class="feature-list">
-        <div class="feature">
-            <strong>Weekday / Casual:</strong> Mon-Fri masses & Sat morning. <br>
-            <em>Ladies: Black Pants & White Polo Shirt</em> <br>
-            <em>Men: Black Pants & White Polo Shirt</em>
+    <div class="section">
+        <h2>🚀 Getting Started</h2>
+        
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-content">
+                <strong>Sign In</strong><br>
+                Open the application and click <strong>"Sign in with Google"</strong>. Use your authorized account to log in.
+            </div>
         </div>
-        <div class="feature">
-            <strong>Sunday / Gala:</strong> All Sunday masses & Sat evening. <br>
-            <em>Ladies: Black Skirt & White Blouse</em> <br>
-            <em>Men: Black Pants & White Polo Shirt</em>
+
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-content">
+                <strong>Dashboard</strong><br>
+                After logging in, you'll be taken to your <strong>Dashboard</strong>. This is your home base, showing:
+                <ul>
+                    <li>Your <strong>Next Assignment</strong> (highlighted with a countdown)</li>
+                    <li>A list of all your upcoming mass duties</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="tip">
+            You can install this app on your phone! On Android (Chrome), tap <strong>⋮ > Add to Home Screen</strong>. On iPhone (Safari), tap <strong>Share > Add to Home Screen</strong>.
         </div>
     </div>
 
-    <h2>📊 Viewing Volunteer Summaries</h2>
+    <div class="section">
+        <h2>👤 For Volunteers</h2>
 
-    <div class="step">
-        <span class="step-number">1</span>
-        Go to the <strong>"Summary"</strong> tab
-    </div>
-    <div class="step">
-        <span class="step-number">2</span>
-        Select the <strong>Year</strong> to view
-    </div>
-    <div class="step">
-        <span class="step-number">3</span>
-        See each volunteer's total assignments and upcoming schedule
-    </div>
+        <h3>Checking the Schedule</h3>
+        <p>Navigate to the <strong>Summary</strong> page to see the full ministry schedule.</p>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h4>Calendar View</h4>
+                A monthly calendar grid showing who is assigned to each mass. Great for seeing the "big picture."
+            </div>
+            <div class="feature-card">
+                <h4>List View (Person View)</h4>
+                A searchable list of all volunteers. Find your name to see every date you are assigned in the selected month.
+            </div>
+        </div>
 
-    <div class="tip">
-        Use this to verify fair distribution of assignments across all volunteers.
-    </div>
-
-    <div class="page-break"></div>
-
-    <h2>❓ Frequently Asked Questions</h2>
-
-    <h3>Q: Can I edit individual assignments?</h3>
-    <p><strong>A:</strong> Currently, you need to regenerate the schedule or add a Special Mass with manual assignments.
-        Future updates may include direct editing.</p>
-
-    <h3>Q: What if a volunteer becomes unavailable after the schedule is created?</h3>
-    <p><strong>A:</strong> Mark them as unavailable in the "Update Availability" tab, then click "Regenerate" to create
-        a new schedule without them.</p>
-
-    <h3>Q: How does the app ensure fairness?</h3>
-    <p><strong>A:</strong> The algorithm:</p>
-    <ul>
-        <li>Distributes assignments evenly across all volunteers</li>
-        <li>Avoids assigning the same person on consecutive days</li>
-        <li>Limits weekday assignments to 1 per week per volunteer</li>
-        <li>Rotates roles and partners for variety</li>
-    </ul>
-
-    <h3>Q: Can multiple people use the app at the same time?</h3>
-    <p><strong>A:</strong> Yes! Changes are saved to the cloud and sync automatically.</p>
-
-    <h3>Q: How do I print the schedule?</h3>
-    <p><strong>A:</strong> Use your browser's print function (Ctrl+P or Cmd+P) while viewing the Schedule tab.</p>
-
-    <h2>🆘 Need Help?</h2>
-
-    <p>If you encounter any issues or have questions:</p>
-    <ul>
-        <li>Check that you're signed in with the correct Google account</li>
-        <li>Try refreshing the page (F5 or Cmd+R)</li>
-        <li>Clear your browser cache if the app seems stuck</li>
-        <li>Contact your administrator for technical support</li>
-    </ul>
-
-    <div class="tip">
-        The app works best on modern browsers like Chrome, Firefox, Safari, or Edge.
+        <h3>My Profile</h3>
+        <p>Go to the <strong>Profile</strong> tab to:</p>
+        <ul>
+            <li>View your account details.</li>
+            <li><strong>Dark Mode:</strong> Toggle the "Dark Mode" switch to easier viewing at night.</li>
+            <li><strong>Logout:</strong> Securely sign out of the application.</li>
+        </ul>
     </div>
 
-    <hr style="margin: 40px 0; border: none; border-top: 2px solid #E5E7EB;">
+    <div class="section">
+        <h2>🛠️ For Managers & Admins <span class="role-badge role-admin">Admin</span></h2>
 
+        <h3>Managing Volunteers</h3>
+        <p>Go to the <strong>Volunteers</strong> tab to add new members to the ministry.</p>
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-content">
+                Click <strong>Volunteer Summary</strong> (or navigate to /volunteers) to view the list.
+            </div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-content">
+                Use the <strong>"Add New Volunteer"</strong> form (usually found in the Availability page or dedicated Manage section) to onboard new members.
+            </div>
+        </div>
+
+        <h3>Managing Availability</h3>
+        <p>The <strong>Availability</strong> page is where you configure who can serve when. Click on any volunteer's name to open their settings:</p>
+        
+        <div class="feature-grid">
+            <div class="feature-card">
+                <h4>Volunteer Level</h4>
+                Toggle between <strong>Lector</strong> (Readers) and <strong>Volunteer</strong> (Experienced/All Roles).
+            </div>
+            <div class="feature-card">
+                <h4>Time Preferences</h4>
+                Set "Always Available", "Available ONLY at...", or "Available EXCEPT..." specific times.
+            </div>
+            <div class="feature-card">
+                <h4>Specific Dates</h4>
+                Click dates on the calendar to mark them as <strong>Unavailable (Red)</strong>. You can also set a date range.
+            </div>
+            <div class="feature-card">
+                <h4>Indefinite Leave</h4>
+                Check "Mark as Unavailable Indefinitely" for members on long-term leave.
+            </div>
+        </div>
+
+        <div class="warning">
+            If you mark a volunteer as unavailable on a date they are <strong>already assigned</strong>, the system will warn you and offer to auto-repair the schedule!
+        </div>
+
+        <h3>Generating the Schedule</h3>
+        <p>Go to the <strong>Schedule</strong> tab to create or view the monthly rostrum.</p>
+        
+        <div class="step">
+            <span class="step-number">1</span>
+            <div class="step-content">
+                Select the <strong>Month</strong> and <strong>Year</strong>.
+            </div>
+        </div>
+        <div class="step">
+            <span class="step-number">2</span>
+            <div class="step-content">
+                Click <strong>Generate Schedule</strong>. The system will automatically assign volunteers based on history and fairness rules.
+            </div>
+        </div>
+        <div class="step">
+            <span class="step-number">3</span>
+            <div class="step-content">
+                <strong>Review</strong>: Use the table to verify assignments.
+            </div>
+        </div>
+
+        <h3>Special Masses</h3>
+        <p>Need to add a wedding, funeral, or holiday mass?</p>
+        <ul>
+            <li>Click <strong>"+ Add Special Mass"</strong> in the Schedule tab.</li>
+            <li>Enter the Date, Time, Name, and Description.</li>
+            <li>The system will suggest assignments, or you can leave them to be filled later.</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>❓ FAQ</h2>
+        
+        <h3>Q: How do I print the schedule?</h3>
+        <p><strong>A:</strong> Go to the <strong>Summary</strong> page and click the <strong>"Download PDF Summary"</strong> button for a clean, printable version.</p>
+
+        <h3>Q: Can I edit assignments manually?</h3>
+        <p><strong>A:</strong> You can edit mass details (time/name) using the Edit (pencil) button. To change extended assignments, it is best to update the volunteer's availability for that day and click <strong>Regenerate</strong> to let the system find the best replacement.</p>
+        
+        <h3>Q: What does the "Attire" section mean?</h3>
+        <p><strong>A:</strong> Symbols like 👕 (Casual) and 👔 (Gala) indicate the required dress code for the mass type (Weekday vs Sunday/Special).</p>
+    </div>
+
+    <hr style="margin: 40px 0; border: none; border-top: 1px solid #E5E7EB;">
+    
     <p style="text-align: center; color: #6B7280; font-size: 0.9em;">
-        <strong>Mass Volunteer Scheduler</strong><br>
-        Version 1.0 | Last Updated: December 2025
+        <strong>Mass Ministry Scheduler</strong><br>
+        Version 2.0 | Updated January 2026
     </p>
-</body>
 
+    <script>
+        // Simple script to handle print view if opened directly
+        if (window.matchMedia) {
+            var mediaQueryList = window.matchMedia('print');
+            mediaQueryList.addListener(function(mql) {
+                if (mql.matches) {
+                    document.querySelectorAll('.no-print').forEach(el => el.style.display = 'none');
+                } else {
+                    document.querySelectorAll('.no-print').forEach(el => el.style.display = '');
+                }
+            });
+        }
+    </script>
+</body>
 </html>

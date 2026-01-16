@@ -23,6 +23,36 @@ const isAvailable = (volunteer: Volunteer, date: Date): boolean => {
     });
 };
 
+// Helper to check if volunteer is available at a specific time
+const isAvailableAtTime = (volunteer: Volunteer, massDate: Date): boolean => {
+    const massTime = format(massDate, 'HH:mm');
+
+    // If mode is 'always', they're available at all times
+    if (volunteer.availabilityMode === 'always') {
+        return true;
+    }
+
+    // Helper to check if time falls within a slot
+    const isTimeInSlot = (time: string, slot: { start: string; end: string }): boolean => {
+        return time >= slot.start && time <= slot.end;
+    };
+
+    // If mode is 'except', check if time is in unavailable slots
+    if (volunteer.availabilityMode === 'except') {
+        const unavailableSlots = volunteer.unavailableTimeSlots || [];
+        const isUnavailable = unavailableSlots.some(slot => isTimeInSlot(massTime, slot));
+        return !isUnavailable; // Available if NOT in unavailable slots
+    }
+
+    // If mode is 'only', check if time is in available slots
+    if (volunteer.availabilityMode === 'only') {
+        const availableSlots = volunteer.availableTimeSlots || [];
+        return availableSlots.some(slot => isTimeInSlot(massTime, slot));
+    }
+
+    return true; // Default to available
+};
+
 export const generateSchedule = (
     volunteers: Volunteer[],
     year: number,
@@ -152,7 +182,8 @@ export const generateSchedule = (
             requiredRoles.forEach(role => {
                 const candidate = findBestCandidate(
                     volunteers,
-                    dateStr,
+                    day, // Passing the full day Date object
+                    safeToDate(mass.date), // Passing the full mass Date object
                     weekNum,
                     role,
                     mass.type,
@@ -215,7 +246,8 @@ const createMass = (date: Date, timeStr: string, type: 'Weekday' | 'Sunday'): Ma
 
 export const findBestCandidate = (
     volunteers: Volunteer[],
-    dateStr: string,
+    date: Date,
+    massDate: Date,
     weekNum: number,
     role: Role,
     massType: 'Weekday' | 'Sunday' | 'Special',
@@ -225,35 +257,47 @@ export const findBestCandidate = (
     lastRole: Record<string, Role>,
     lastPartner: Record<string, string>
 ): Volunteer | null => {
+    const dateStr = format(date, 'yyyy-MM-dd');
 
-    // Filter valid candidates
-    let candidates = volunteers.filter(v => {
-        // 0. Must be active
-        if (v.isActive === false) return false;
+    // Helper function to filter candidates with all constraints
+    const filterCandidates = () => {
+        return volunteers.filter(v => {
+            // 0. Must be active
+            if (v.isActive === false) return false;
 
-        // 1. Availability (Constraint 1 implied: if unavail, can't assign)
-        // Note: isAvailable needs actual Date object, but we have dateStr. 
-        // Simplified: check if dateStr is in unavailable list.
-        // Ideally we pass Date object. Re-parsing for now.
-        if (!isAvailable(v, new Date(dateStr))) return false;
+            // NEW: Volunteer Level Check
+            // Lector level can do Lector1 or Lector2
+            // Volunteer level can do all roles
+            if (v.volunteerLevel === 'Lector' && role !== 'Lector1' && role !== 'Lector2') {
+                return false;
+            }
 
-        // 2. No assignments for 2 consecutive days
-        const prevDate = new Date(dateStr);
-        prevDate.setDate(prevDate.getDate() - 1);
-        const prevDateStr = format(prevDate, 'yyyy-MM-dd');
-        if (history[v.id].includes(prevDateStr)) return false;
+            // 1. Availability check: Date-based
+            if (!isAvailable(v, date)) return false;
 
-        // 3. No two assignments in one day (Constraint 3)
-        if (history[v.id].includes(dateStr)) return false;
+            // 2. Availability check: Time-based
+            if (!isAvailableAtTime(v, massDate)) return false;
 
-        // 4. Weekday constraint: only 1 weekday schedule a week
-        if (massType === 'Weekday') {
-            const count = weeklyCounts[v.id][weekNum] || 0;
-            if (count >= 1) return false;
-        }
+            // 2. No assignments for 2 consecutive days
+            const prevDate = new Date(dateStr);
+            prevDate.setDate(prevDate.getDate() - 1);
+            const prevDateStr = format(prevDate, 'yyyy-MM-dd');
+            if (history[v.id].includes(prevDateStr)) return false;
 
-        return true;
-    });
+            // 3. No two assignments in one day (Constraint 3)
+            if (history[v.id].includes(dateStr)) return false;
+
+            // 4. Weekday constraint: only 1 weekday schedule a week
+            if (massType === 'Weekday') {
+                const count = weeklyCounts[v.id][weekNum] || 0;
+                if (count >= 1) return false;
+            }
+
+            return true;
+        });
+    };
+
+    let candidates = filterCandidates();
 
     // Scoring/Sorting candidates
     candidates.sort((a, b) => {
@@ -359,7 +403,8 @@ export const repairSchedule = (
                     // B. Find replacement
                     const replacement = findBestCandidate(
                         volunteers,
-                        dateStr,
+                        date,
+                        date, // In repair, date is the mass date
                         getWeek(date),
                         role as Role,
                         mass.type,

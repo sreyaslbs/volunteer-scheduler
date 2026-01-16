@@ -2,16 +2,16 @@ import { generateSchedule } from './scheduler';
 import type { Volunteer } from '../types';
 
 const volunteers: Volunteer[] = [
-    { id: '1', name: 'Alice', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '2', name: 'Bob', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '3', name: 'Charlie', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '4', name: 'David', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '5', name: 'Eve', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '6', name: 'Frank', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '7', name: 'Grace', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '8', name: 'Heidi', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '9', name: 'Ivan', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
-    { id: '10', name: 'Judy', roles: ['Lector1', 'Commentator'], unavailableDates: [] },
+    { id: '1', name: 'Alice', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '2', name: 'Bob', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '3', name: 'Charlie', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '4', name: 'David', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '5', name: 'Eve', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '6', name: 'Frank', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '7', name: 'Grace', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '8', name: 'Heidi', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '9', name: 'Ivan', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
+    { id: '10', name: 'Judy', roles: ['Lector1', 'Commentator'], unavailableDates: [], volunteerLevel: 'Volunteer', availabilityMode: 'always' },
 ];
 
 console.log("Generating schedule for Nov 2025...");
