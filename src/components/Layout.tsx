@@ -110,9 +110,9 @@ export default function Layout() {
                         </div>
 
                         {/* Center Text */}
-                        <div className="text-center px-2">
-                            <h1 className="text-sm md:text-2xl font-extrabold text-indigo-900 dark:text-indigo-400 leading-tight tracking-tight">OUR LADY OF THE PILLAR PARISH</h1>
-                            <p className="text-[10px] md:text-sm font-bold text-indigo-600 dark:text-indigo-300 tracking-widest mt-0.5 md:mt-2 uppercase">Ministry of Lectors, Commentators and Psalmists</p>
+                        <div className="text-center px-2 flex flex-col gap-1">
+                            <h1 className="text-xs md:text-lg font-extrabold text-indigo-600 dark:text-indigo-300 tracking-wider uppercase mb-0">Ministry of Lectors, Commentators and Psalmists</h1>
+                            <p className="text-xs md:text-lg font-extrabold text-indigo-900 dark:text-indigo-400 leading-tight tracking-tight mt-0">OUR LADY OF THE PILLAR PARISH</p>
                         </div>
 
                         {/* Right Emblem - Ministry Logo */}

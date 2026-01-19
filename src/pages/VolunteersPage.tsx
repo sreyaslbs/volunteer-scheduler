@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useVolunteers, useSchedule, useAuth } from '../lib/hooks';
 import { format } from 'date-fns';
-import { Printer, Calendar, List, Search } from 'lucide-react';
+import { Printer, Calendar, List, Search, FileDown } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 export default function VolunteersPage() {
     const { volunteers, loading, seedVolunteers } = useVolunteers();
@@ -51,6 +53,236 @@ export default function VolunteersPage() {
         }
     };
 
+    const handleDownloadExcel = async () => {
+        if (!schedule || !schedule.masses) return;
+
+        const getVolunteerName = (id: string | null) => {
+            if (!id) return "";
+            const volunteer = volunteers.find((v: any) => v.id === id);
+            return volunteer?.name || "Unknown";
+        };
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Schedule');
+
+        // Main Headers
+        const titleRow1 = worksheet.addRow(["OUR LADY OF THE PILLAR PARISH"]);
+        const titleRow2 = worksheet.addRow(["MINISTRY OF LECTORS, COMMENTATORS AND PSALMISTS (MLCP)"]);
+        const titleRow3 = worksheet.addRow([`${format(new Date(year, month - 1), 'MMMM yyyy').toUpperCase()} MASS SCHEDULE`]);
+        worksheet.addRow([]); // Empty row
+
+        // Merge title rows
+        worksheet.mergeCells('A1:Q1');
+        worksheet.mergeCells('A2:Q2');
+        worksheet.mergeCells('A3:Q3');
+
+        // Style title rows
+        [titleRow1, titleRow2, titleRow3].forEach(row => {
+            row.alignment = { horizontal: 'center' };
+            row.font = { bold: true, size: 12 };
+        });
+
+        const sortedMasses = [...schedule.masses].sort((a, b) => {
+            const timeA = (a.date as any).toDate ? (a.date as any).toDate().getTime() : (a.date as any).seconds * 1000;
+            const timeB = (b.date as any).toDate ? (b.date as any).toDate().getTime() : (b.date as any).seconds * 1000;
+            return timeA - timeB;
+        });
+
+        const sections: Record<string, any[]> = {};
+        sortedMasses.forEach(m => {
+            const dateObj = (m.date as any).toDate ? (m.date as any).toDate() : new Date((m.date as any).seconds ? (m.date as any).seconds * 1000 : m.date);
+            const timeStr = format(dateObj, 'HH:mm');
+            const isSat = dateObj.getDay() === 6;
+            const isSun = dateObj.getDay() === 0;
+
+            let sectionKey = m.name ? m.name.toUpperCase() : m.type.toUpperCase();
+
+            if (isSun) sectionKey = "SUNDAYS";
+            else if (isSat) {
+                if (timeStr === '19:30') sectionKey = "ANTICIPATED MASS CAMELLA";
+                else if (timeStr === '18:30') sectionKey = "ANTICIPATED MASS OLPP";
+                else if (timeStr === '17:30') sectionKey = m.name ? `ANTICIPATED MASS ${m.name.toUpperCase()}` : "ANTICIPATED MASS";
+                else sectionKey = m.name ? `ANTICIPATED MASS ${m.name.toUpperCase()}` : "ANTICIPATED MASS";
+            } else if (m.type === 'Weekday') {
+                sectionKey = "WEEKDAY MASSES";
+            }
+
+            if (!sections[sectionKey]) sections[sectionKey] = [];
+            sections[sectionKey].push(m);
+        });
+
+        const order = [
+            "ANTICIPATED MASS CAMELLA", "ANTICIPATED MASS OLPP", "ANTICIPATED MASS SAMPAGUITA",
+            "ANTICIPATED MASS TERESA PARK/COMPD", "ANTICIPATED MASS GLORIA", "ANTICIPATED MASS PAG-ASA",
+            "SUNDAYS", "WEEKDAY MASSES"
+        ];
+
+        const sectionOrder = Object.keys(sections).sort((a, b) => {
+            const idxA = order.indexOf(a);
+            const idxB = order.indexOf(b);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+            return a.localeCompare(b);
+        });
+
+        sectionOrder.forEach(key => {
+            const masses = sections[key];
+            if (masses.length === 0) return;
+
+            // Section Header
+            const sectionRow = worksheet.addRow([]);
+            if (key === "WEEKDAY MASSES") {
+                sectionRow.getCell(1).value = "WEEKDAYS";
+                sectionRow.getCell(9).value = "ATTIRE: Black Skirt & White Blouse (Ladies)";
+                worksheet.mergeCells(sectionRow.number, 1, sectionRow.number + 1, 2);
+                worksheet.mergeCells(sectionRow.number, 9, sectionRow.number, 17);
+                sectionRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(1).font = { bold: true };
+
+                const attireRow2 = worksheet.getRow(sectionRow.number + 1);
+                attireRow2.getCell(9).value = "Black Pants & White Polo Shirt (Men)";
+                worksheet.mergeCells(attireRow2.number, 9, attireRow2.number, 17);
+                attireRow2.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+            } else if (key.startsWith("ANTICIPATED MASS")) {
+                const location = key.replace("ANTICIPATED MASS ", "");
+                sectionRow.getCell(1).value = "ANTICIPATED MASS";
+                sectionRow.getCell(9).value = "ATTIRE: GALA UNIFORM";
+                worksheet.mergeCells(sectionRow.number, 1, sectionRow.number, 2);
+                worksheet.mergeCells(sectionRow.number, 9, sectionRow.number, 17);
+                sectionRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(1).font = { bold: true };
+
+                const locRow = worksheet.addRow([]);
+                locRow.getCell(1).value = location;
+                worksheet.mergeCells(locRow.number, 1, locRow.number, 2);
+                locRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                locRow.getCell(1).font = { bold: true };
+            } else {
+                sectionRow.getCell(1).value = key;
+                sectionRow.getCell(9).value = "ATTIRE: GALA UNIFORM";
+                worksheet.mergeCells(sectionRow.number, 1, sectionRow.number, 2);
+                worksheet.mergeCells(sectionRow.number, 9, sectionRow.number, 17);
+                sectionRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+                sectionRow.getCell(1).font = { bold: true };
+            }
+
+            // Table Header Row 1
+            const headerRow1 = [
+                "DATE", "TIME",
+                "LECTOR 1", "LECTOR 1", "LECTOR 1", "SWAPPED", "SWAPPED",
+                "LECTOR 2", "LECTOR 2", "LECTOR 2", "SWAPPED", "SWAPPED",
+                "COMMENTATOR", "COMMENTATOR", "COMMENTATOR", "SWAPPED", "SWAPPED"
+            ];
+            const headerRow2 = [
+                "", "",
+                "ON DUTY", "WHO SERVED", "TIME", "DATE", "TIME",
+                "ON DUTY", "WHO SERVED", "TIME", "DATE", "TIME",
+                "ON DUTY", "WHO SERVED", "TIME", "DATE", "TIME"
+            ];
+
+            const h1 = worksheet.addRow(headerRow1);
+            const h2 = worksheet.addRow(headerRow2);
+
+            // Merge Headers
+            worksheet.mergeCells(h1.number, 1, h2.number, 1); // DATE
+            worksheet.mergeCells(h1.number, 2, h2.number, 2); // TIME
+            worksheet.mergeCells(h1.number, 3, h1.number, 5); // L1 Group
+            worksheet.mergeCells(h1.number, 6, h1.number, 7); // L1 Swapped
+            worksheet.mergeCells(h1.number, 8, h1.number, 10); // L2 Group
+            worksheet.mergeCells(h1.number, 11, h1.number, 12); // L2 Swapped
+            worksheet.mergeCells(h1.number, 13, h1.number, 15); // COM Group
+            worksheet.mergeCells(h1.number, 16, h1.number, 17); // COM Swapped
+
+            [h1, h2].forEach(row => {
+                row.eachCell({ includeEmpty: true }, cell => {
+                    cell.font = { bold: true };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                });
+            });
+
+            // Data Rows
+            let lastDataRowNumber = h2.number;
+            masses.forEach(m => {
+                const dateObj = (m.date as any).toDate ? (m.date as any).toDate() : new Date((m.date as any).seconds ? (m.date as any).seconds * 1000 : m.date);
+                const row = worksheet.addRow([
+                    format(dateObj, 'eeee, d MMMM yyyy'),
+                    format(dateObj, 'hh:mm a'),
+                    getVolunteerName(m.assignments.Lector1), "", "", "", "", // L1
+                    getVolunteerName(m.assignments.Lector2), "", "", "", "", // L2
+                    getVolunteerName(m.assignments.Commentator), "", "", "", "" // Com
+                ]);
+                row.eachCell({ includeEmpty: true }, cell => {
+                    cell.alignment = { vertical: 'middle' };
+                });
+                lastDataRowNumber = row.number;
+            });
+
+            // APPLY BORDERS TO THE ENTIRE SECTION TABLE
+            const tableStartRow = sectionRow.number;
+            const tableEndRow = lastDataRowNumber;
+
+            for (let r = tableStartRow; r <= tableEndRow; r++) {
+                const row = worksheet.getRow(r);
+                const nextRow = r < tableEndRow ? worksheet.getRow(r + 1) : null;
+
+                // Check if date changes in the next row (only for data rows)
+                let isDateEnd = false;
+                if (r >= h2.number && nextRow && r < tableEndRow) {
+                    const currentVal = row.getCell(1).value?.toString() || '';
+                    const nextVal = nextRow.getCell(1).value?.toString() || '';
+                    // Only trigger if we are in data rows and values are dates
+                    if (currentVal.includes(',') && nextVal.includes(',') && currentVal !== nextVal) {
+                        isDateEnd = true;
+                    }
+                }
+
+                for (let c = 1; c <= 17; c++) {
+                    const cell = row.getCell(c);
+
+                    const borderStyle: any = {
+                        top: { style: 'thin' },
+                        left: { style: 'thin' },
+                        bottom: isDateEnd ? { style: 'medium' } : { style: 'thin' },
+                        right: { style: 'thin' }
+                    };
+
+                    // Thick Outer Perimeter
+                    if (r === tableStartRow) borderStyle.top = { style: 'medium' };
+                    if (r === tableEndRow) borderStyle.bottom = { style: 'medium' };
+                    if (c === 1) borderStyle.left = { style: 'medium' };
+                    if (c === 17) borderStyle.right = { style: 'medium' };
+
+                    // Thick Group Dividers
+                    if (c === 2 || c === 7 || c === 12) borderStyle.right = { style: 'medium' };
+                    if (c === 3 || c === 8 || c === 13) borderStyle.left = { style: 'medium' };
+
+                    cell.border = borderStyle;
+                }
+            }
+
+            // Gap between sections
+            worksheet.addRow([]);
+            worksheet.addRow([]);
+            worksheet.addRow([]);
+            worksheet.addRow([]);
+        });
+
+        // Column Widths
+        worksheet.columns = [
+            { width: 25 }, { width: 12 }, // Date, Time
+            { width: 15 }, { width: 12 }, { width: 10 }, { width: 12 }, { width: 10 }, // L1
+            { width: 15 }, { width: 12 }, { width: 10 }, { width: 12 }, { width: 10 }, // L2
+            { width: 15 }, { width: 12 }, { width: 10 }, { width: 12 }, { width: 10 }  // Com
+        ];
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(new Blob([buffer]), `Mass_Schedule_${format(new Date(year, month - 1), 'MMMM_yyyy')}.xlsx`);
+    };
+
     if (loading) return <div className="p-4 text-center">Loading volunteers...</div>;
 
     return (
@@ -61,10 +293,10 @@ export default function VolunteersPage() {
                     {/* Left Emblem */}
                     <img src="/parish-logo.png" alt="Parish Logo" className="w-16 h-16 object-contain" />
 
-                    <div className="text-center px-4">
-                        <h1 className="text-xl font-extrabold text-black leading-tight tracking-tight uppercase">OUR LADY OF THE PILLAR PARISH</h1>
-                        <p className="text-xs font-bold text-gray-700 tracking-widest mt-1 uppercase">Ministry of Lectors, Commentators and Psalmists</p>
-                        <h2 className="text-lg font-bold text-black mt-2">Volunteer Summary - {format(new Date(year, month - 1), 'MMMM yyyy')}</h2>
+                    <div className="text-center px-4 flex flex-col gap-1">
+                        <h1 className="text-base font-extrabold text-gray-700 tracking-wider uppercase">Ministry of Lectors, Commentators and Psalmists</h1>
+                        <p className="text-base font-extrabold text-black leading-tight tracking-tight uppercase">OUR LADY OF THE PILLAR PARISH</p>
+                        <h2 className="text-xs font-bold text-gray-500 mt-1 italic">Volunteer Summary - {format(new Date(year, month - 1), 'MMMM yyyy')}</h2>
                     </div>
 
                     {/* Right Emblem */}
@@ -166,15 +398,23 @@ export default function VolunteersPage() {
                 </div>
             </div>
 
-            {/* Download PDF Button - Positioned at Bottom */}
-            <div className="flex justify-center no-print">
+            {/* Download Buttons - Positioned at Bottom */}
+            <div className="flex flex-col sm:flex-row justify-center gap-4 no-print mt-8">
                 <button
                     onClick={() => window.print()}
-                    className="px-6 py-3 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg flex items-center gap-2 text-sm font-medium shadow-md hover:shadow-lg transition-all"
+                    className="px-6 py-3 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg flex items-center justify-center gap-2 text-sm font-medium shadow-md hover:shadow-lg transition-all"
                     title="Print / Download PDF"
                 >
                     <Printer className="w-5 h-5" />
                     <span>Download PDF Summary</span>
+                </button>
+                <button
+                    onClick={handleDownloadExcel}
+                    className="px-6 py-3 bg-green-600 text-white hover:bg-green-700 rounded-lg flex items-center justify-center gap-2 text-sm font-medium shadow-md hover:shadow-lg transition-all"
+                    title="Download Excel"
+                >
+                    <FileDown className="w-5 h-5" />
+                    <span>Download Excel Summary</span>
                 </button>
             </div>
         </div>
@@ -296,9 +536,9 @@ function CalendarSummaryView({ schedule, volunteers, month, year }: any) {
                                             {/* Volunteers */}
                                             {/* Volunteers */}
                                             {[
-                                                { label: 'C', name: getVolunteerName(mass.assignments.Commentator) },
                                                 { label: 'L1', name: getVolunteerName(mass.assignments.Lector1) },
-                                                (mass.type === 'Sunday' && mass.assignments.Lector2) ? { label: 'L2', name: getVolunteerName(mass.assignments.Lector2) } : null
+                                                (mass.type === 'Sunday' && mass.assignments.Lector2) ? { label: 'L2', name: getVolunteerName(mass.assignments.Lector2) } : null,
+                                                { label: 'C', name: getVolunteerName(mass.assignments.Commentator) }
                                             ].filter(Boolean).map((role: any, rIdx) => (
                                                 <div key={rIdx} className="whitespace-nowrap flex items-center">
                                                     <span className="text-gray-500 dark:text-gray-400 font-medium mr-0.5">{role.label}:</span>
@@ -334,7 +574,7 @@ function CalendarSummaryView({ schedule, volunteers, month, year }: any) {
                     <span className="text-gray-600 dark:text-gray-400">Highlighted</span>
                 </div>
                 <div className="ml-auto text-gray-500 dark:text-gray-500">
-                    C = Commentator • L1 = Lector 1 • L2 = Lector 2
+                    L1 = Lector 1 • L2 = Lector 2 • C = Commentator
                 </div>
             </div>
         </div>

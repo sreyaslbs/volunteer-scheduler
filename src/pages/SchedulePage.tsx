@@ -253,9 +253,9 @@ export default function SchedulePage() {
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">Date</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Time</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Type</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commentator</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector1</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector2</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commentator</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -296,13 +296,13 @@ export default function SchedulePage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    {getVolunteerName(mass.assignments.Commentator)}
-                                                </td>
-                                                <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
                                                     {getVolunteerName(mass.assignments.Lector1)}
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
                                                     {mass.type === 'Sunday' ? getVolunteerName(mass.assignments.Lector2) : <span className="text-gray-300 dark:text-gray-600">-</span>}
+                                                </td>
+                                                <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+                                                    {getVolunteerName(mass.assignments.Commentator)}
                                                 </td>
                                                 <td className="px-4 py-2 text-right">
                                                     <button
