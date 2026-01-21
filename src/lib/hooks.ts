@@ -3,7 +3,7 @@ import { collection, getDocs, Timestamp, doc, updateDoc, writeBatch, setDoc, get
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db } from './firebase';
-import type { Volunteer, AppUser, UserRole } from '../types';
+import type { Volunteer, AppUser, UserRole, Role } from '../types';
 
 const ADMIN_EMAIL = 'mailsuren2019@gmail.com';
 
@@ -112,10 +112,13 @@ export const useVolunteers = () => {
                 return {
                     id: d.id,
                     ...data,
-                    volunteerLevel: data.volunteerLevel || 'Volunteer', // Existing volunteers default to 'Volunteer' level
-                    availabilityMode: data.availabilityMode || 'always',
-                    availableTimeSlots: data.availableTimeSlots || [],
-                    unavailableTimeSlots: data.unavailableTimeSlots || []
+                    volunteerLevel: data.volunteerLevel === 'Trainee' ? 'Trainee' : 'Lector',
+                    // Robust array migration: ensure it's always an array of Role
+                    traineeRolePreference: Array.isArray(data.traineeRolePreference)
+                        ? (data.traineeRolePreference.length > 0 ? data.traineeRolePreference : ['Lector2'])
+                        : (data.traineeRolePreference ? [data.traineeRolePreference] : ['Lector2']),
+                    weekdayMassAvailability: data.weekdayMassAvailability || ['06:00', '07:00', '07:30', '18:30'],
+                    unavailableDaysOfWeek: data.unavailableDaysOfWeek || []
                 };
             }) as Volunteer[];
             setVolunteers(vList);
@@ -154,8 +157,10 @@ export const useVolunteers = () => {
                 name,
                 roles: ['Lector1', 'Commentator'],
                 unavailableDates: [],
-                volunteerLevel: 'Lector', // New volunteers default to Lector level
-                availabilityMode: 'always' // Default to always available
+                volunteerLevel: 'Trainee', // New volunteers default to Trainee level
+                traineeRolePreference: ['Lector2'],
+                weekdayMassAvailability: ['06:00', '07:00', '07:30', '18:30'],
+                unavailableDaysOfWeek: []
             };
 
             // Optimistic update
@@ -167,8 +172,10 @@ export const useVolunteers = () => {
                 name,
                 roles: ['Lector1', 'Commentator'],
                 unavailableDates: [],
-                volunteerLevel: 'Lector',
-                availabilityMode: 'always'
+                volunteerLevel: 'Trainee',
+                traineeRolePreference: ['Lector2'],
+                weekdayMassAvailability: ['06:00', '07:00', '07:30', '18:30'],
+                unavailableDaysOfWeek: []
             });
         } catch (e) {
             console.error("Error adding volunteer (background sync failed)", e);
@@ -195,7 +202,7 @@ export const useVolunteers = () => {
                 name,
                 roles: ['Lector1', 'Commentator'],
                 unavailableDates: [],
-                volunteerLevel: 'Volunteer', // Seeded volunteers are experienced
+                volunteerLevel: 'Lector', // Seeded volunteers are experienced
                 availabilityMode: 'always'
             }));
 
@@ -215,7 +222,8 @@ export const useVolunteers = () => {
                     roles: v.roles,
                     unavailableDates: v.unavailableDates,
                     volunteerLevel: v.volunteerLevel,
-                    availabilityMode: v.availabilityMode
+                    traineeRolePreference: v.traineeRolePreference || ['Lector2'],
+                    weekdayMassAvailability: ['06:00', '07:00', '07:30', '18:30']
                 });
             });
 
@@ -293,38 +301,47 @@ export const useVolunteers = () => {
         }
     };
 
-    const updateVolunteerLevel = async (id: string, level: 'Lector' | 'Volunteer') => {
+    const updateVolunteerLevel = async (id: string, level: 'Trainee' | 'Lector') => {
         try {
             const ref = doc(db, 'volunteers', id);
-            await updateDoc(ref, { volunteerLevel: level });
-            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, volunteerLevel: level } : v));
+            const updateData: any = { volunteerLevel: level };
+            if (level === 'Trainee') {
+                updateData.traineeRolePreference = ['Lector2']; // Reset/Set default when switching to trainee
+            }
+            await updateDoc(ref, updateData);
+            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, ...updateData } : v));
         } catch (e) {
             console.error("Error updating volunteer level", e);
         }
     };
 
-    const updateTimeAvailability = async (
-        id: string,
-        mode: 'always' | 'except' | 'only',
-        availableSlots?: { start: string; end: string }[],
-        unavailableSlots?: { start: string; end: string }[]
-    ) => {
+    const updateTraineePreference = async (id: string, preference: Role[]) => {
         try {
             const ref = doc(db, 'volunteers', id);
-            const updateData: any = {
-                availabilityMode: mode,
-                availableTimeSlots: availableSlots || [],
-                unavailableTimeSlots: unavailableSlots || []
-            };
-            await updateDoc(ref, updateData);
-            setVolunteers(prev => prev.map(v => v.id === id ? {
-                ...v,
-                availabilityMode: mode,
-                availableTimeSlots: availableSlots,
-                unavailableTimeSlots: unavailableSlots
-            } : v));
+            await updateDoc(ref, { traineeRolePreference: preference });
+            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, traineeRolePreference: preference } : v));
         } catch (e) {
-            console.error("Error updating time availability", e);
+            console.error("Error updating trainee preference", e);
+        }
+    };
+
+    const updateWeekdayAvailability = async (id: string, slots: string[]) => {
+        try {
+            const ref = doc(db, 'volunteers', id);
+            await updateDoc(ref, { weekdayMassAvailability: slots });
+            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, weekdayMassAvailability: slots } : v));
+        } catch (e) {
+            console.error("Error updating weekday availability", e);
+        }
+    };
+
+    const updateRecurringAvailability = async (id: string, days: number[]) => {
+        try {
+            const ref = doc(db, 'volunteers', id);
+            await updateDoc(ref, { unavailableDaysOfWeek: days });
+            setVolunteers(prev => prev.map(v => v.id === id ? { ...v, unavailableDaysOfWeek: days } : v));
+        } catch (e) {
+            console.error("Error updating recurring availability", e);
         }
     };
 
@@ -356,7 +373,9 @@ export const useVolunteers = () => {
         removeFutureAssignments,
         toggleVolunteerStatus,
         updateVolunteerLevel,
-        updateTimeAvailability
+        updateTraineePreference,
+        updateWeekdayAvailability,
+        updateRecurringAvailability
     };
 };
 

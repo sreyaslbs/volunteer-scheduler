@@ -2,8 +2,8 @@ import { Timestamp } from 'firebase/firestore';
 
 export type Role = 'Lector1' | 'Commentator' | 'Lector2';
 
-// Volunteer level: Lector (new, can only do Lector1) or Volunteer (experienced, can do all roles)
-export type VolunteerLevel = 'Lector' | 'Volunteer';
+// Volunteer level: Trainee (new, can do Lector1 or Lector2) or Lector (experienced, can do all roles)
+export type VolunteerLevel = 'Trainee' | 'Lector';
 
 // Availability mode for time-based constraints
 export type AvailabilityMode = 'always' | 'except' | 'only';
@@ -24,12 +24,14 @@ export interface Volunteer {
     isActive?: boolean;
 
     // NEW: Volunteer level system
-    volunteerLevel: VolunteerLevel; // 'Lector' or 'Volunteer'
+    volunteerLevel: VolunteerLevel; // 'Trainee' or 'Lector'
+    traineeRolePreference?: Role[]; // Preferences for Trainees (List of roles they can do)
 
-    // NEW: Time-based availability
-    availabilityMode: AvailabilityMode; // 'always', 'except', or 'only'
-    availableTimeSlots?: TimeSlot[]; // Times when volunteer IS available (for 'only' mode)
-    unavailableTimeSlots?: TimeSlot[]; // Times when volunteer is NOT available (for 'except' mode)
+    // NEW: Weekday Mass Availability (specific slots: 06:00, 07:00, 07:30, 18:30)
+    weekdayMassAvailability?: string[]; // e.g., ["06:00", "18:30"]
+
+    // NEW: Recurring Weekly Unavailability (0=Sun, 1=Mon, ..., 6=Sat)
+    unavailableDaysOfWeek?: number[];
 }
 
 export interface Assignment {

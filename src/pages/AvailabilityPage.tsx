@@ -1,20 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useVolunteers, useSchedule, useAuth } from '../lib/hooks';
 import { format, isSameMonth, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import clsx from 'clsx';
-import { ChevronLeft, ChevronRight, X, AlertTriangle, RefreshCw, UserPlus, Trash2, Edit2, Clock, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, AlertTriangle, RefreshCw, UserPlus, Trash2, Edit2, Clock } from 'lucide-react';
 import { Timestamp, doc, setDoc } from 'firebase/firestore';
 import { Navigate } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { repairSchedule } from '../lib/scheduler';
-import type { Volunteer } from '../types';
+import type { Volunteer, Role } from '../types';
+
+const safeToDate = (dt: any): Date => {
+    if (!dt) return new Date();
+    if (typeof dt.toDate === 'function') return dt.toDate();
+    if (dt instanceof Date) return dt;
+    if (typeof dt.seconds === 'number') return new Date(dt.seconds * 1000);
+    const parsed = new Date(dt);
+    if (!isNaN(parsed.getTime())) return parsed;
+    return new Date();
+};
 
 export default function AvailabilityPage() {
     const { loading: authLoading, isManager } = useAuth();
-    const { volunteers, loading, updateAvailability, addVolunteer, deleteVolunteer, toggleVolunteerStatus, updateVolunteerLevel, updateTimeAvailability } = useVolunteers();
+    const { volunteers, loading, updateAvailability, addVolunteer, deleteVolunteer, toggleVolunteerStatus, updateVolunteerLevel, updateTraineePreference, updateWeekdayAvailability, updateRecurringAvailability } = useVolunteers();
 
     const [selectedVolunteerId, setSelectedVolunteerId] = useState<string | null>(null);
+    const [stagedVolunteer, setStagedVolunteer] = useState<Volunteer | null>(null);
     const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [isRecurringMode, setIsRecurringMode] = useState(false);
 
     // Fetch schedule for conflict check
     const { schedule, setSchedule } = useSchedule(currentMonth.getMonth() + 1, currentMonth.getFullYear());
@@ -23,6 +35,20 @@ export default function AvailabilityPage() {
     const [conflict, setConflict] = useState<string[] | null>(null);
     const [pendingDates, setPendingDates] = useState<Timestamp[] | null>(null);
     const [isRegenerating, setIsRegenerating] = useState(false);
+
+    // When a volunteer is selected, clone it to stagedVolunteer
+    useEffect(() => {
+        if (selectedVolunteerId) {
+            // Only pull from source if we don't have a staged volunteer yet, 
+            // or if the selected ID has changed.
+            if (!stagedVolunteer || stagedVolunteer.id !== selectedVolunteerId) {
+                const v = volunteers.find(vol => vol.id === selectedVolunteerId);
+                if (v) setStagedVolunteer({ ...v });
+            }
+        } else {
+            setStagedVolunteer(null);
+        }
+    }, [selectedVolunteerId, volunteers]);
 
     if (authLoading) return <div className="p-8 text-center text-gray-500">Authenticating...</div>;
     if (!isManager) return <Navigate to="/" replace />;
@@ -33,10 +59,13 @@ export default function AvailabilityPage() {
 
     const closeModal = () => {
         setSelectedVolunteerId(null);
+        setStagedVolunteer(null);
         setConflict(null);
         setPendingDates(null);
         setIsRegenerating(false);
     };
+
+
 
     const nextMonth = () => {
         setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
@@ -48,88 +77,122 @@ export default function AvailabilityPage() {
 
 
 
-    const handleUpdateAttempt = (dates: Timestamp[]) => {
-        if (!selectedVolunteer) return;
+    const handleDone = async () => {
+        if (!stagedVolunteer) return;
 
-        // 1. Check for conflicts with CURRENT month's existing schedule
-        // Note: dates contains ALL unavailable dates for user. We need to check if any of them 
-        // match an assignment in the LOADED schedule.
-
+        // Check for conflicts
         if (schedule) {
             const conflictingDates: string[] = [];
+            const dates = stagedVolunteer.unavailableDates || [];
 
             schedule.masses.forEach((mass: any) => {
-                const massDateStr = format(mass.date.toDate(), 'yyyy-MM-dd');
-
-                // Check if user is assigned to this mass
-                const isAssigned = Object.values(mass.assignments).includes(selectedVolunteer.id);
+                const massDate = safeToDate(mass.date);
+                const massDateStr = format(massDate, 'yyyy-MM-dd');
+                const isAssigned = Object.values(mass.assignments).includes(stagedVolunteer.id);
 
                 if (isAssigned) {
-                    // Check if this date is newly marked as unavailable
-                    const isNowUnavailable = dates.some(d => {
+                    const isNowUnavailableByDate = dates.some(d => {
                         const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
                         return format(dObj, 'yyyy-MM-dd') === massDateStr;
                     });
 
-                    if (isNowUnavailable) {
+                    const isNowUnavailableByDay = stagedVolunteer.unavailableDaysOfWeek?.includes(massDate.getDay());
+
+                    if (isNowUnavailableByDate || isNowUnavailableByDay) {
                         conflictingDates.push(massDateStr);
                     }
                 }
             });
 
             if (conflictingDates.length > 0) {
-                // Determine if these are NEW conflicts (i.e. wasn't unavailable before)
-                // Actually simpler: if they are assigned AND marked unavailable, it's a conflict to resolve.
-                setConflict(Array.from(new Set(conflictingDates))); // Unique dates
+                setConflict(Array.from(new Set(conflictingDates)));
                 setPendingDates(dates);
-                return;
+                return; // Wait for conflict resolution popup
             }
         }
 
-        // No conflict, proceed
-        updateAvailability(selectedVolunteer.id, dates);
+        // No conflicts or no schedule, save all staged changes
+        await saveStagedChanges();
+    };
+
+    const saveStagedChanges = async () => {
+        if (!stagedVolunteer) return;
+
+        // Find what changed and call respective hooks
+        const original = volunteers.find(v => v.id === stagedVolunteer.id);
+        if (!original) return;
+
+        try {
+            // Dates
+            if (JSON.stringify(original.unavailableDates) !== JSON.stringify(stagedVolunteer.unavailableDates)) {
+                await updateAvailability(stagedVolunteer.id, stagedVolunteer.unavailableDates);
+            }
+            // Level
+            if (original.volunteerLevel !== stagedVolunteer.volunteerLevel) {
+                await updateVolunteerLevel(stagedVolunteer.id, stagedVolunteer.volunteerLevel);
+            }
+            // Preference
+            const prefToSave: Role[] = Array.isArray(stagedVolunteer.traineeRolePreference) ? stagedVolunteer.traineeRolePreference : ['Lector2'];
+            const origPref: Role[] = Array.isArray(original.traineeRolePreference) ? original.traineeRolePreference : ['Lector2'];
+
+            if (JSON.stringify(origPref) !== JSON.stringify(prefToSave)) {
+                await updateTraineePreference(stagedVolunteer.id, prefToSave);
+            }
+            // Weekday Availability
+            if (JSON.stringify(original.weekdayMassAvailability || []) !== JSON.stringify(stagedVolunteer.weekdayMassAvailability || [])) {
+                await updateWeekdayAvailability(stagedVolunteer.id, stagedVolunteer.weekdayMassAvailability || []);
+            }
+            // Recurring Day Unavailability
+            if (JSON.stringify(original.unavailableDaysOfWeek || []) !== JSON.stringify(stagedVolunteer.unavailableDaysOfWeek || [])) {
+                await updateRecurringAvailability(stagedVolunteer.id, stagedVolunteer.unavailableDaysOfWeek || []);
+            }
+            // Active Status
+            if (original.isActive !== stagedVolunteer.isActive) {
+                await toggleVolunteerStatus(stagedVolunteer.id, stagedVolunteer.isActive === false ? false : true);
+            }
+
+            closeModal();
+            // We keep isRecurringMode value for the next volunteer in the same session
+        } catch (e) {
+            console.error("Save failed", e);
+            alert("Failed to save some changes.");
+        }
     };
 
     const proceedWithConflict = async (regenerate: boolean) => {
-        if (!selectedVolunteer || !pendingDates) return;
+        if (!stagedVolunteer || !pendingDates) return;
 
-        // 1. Update Availability
-        await updateAvailability(selectedVolunteer.id, pendingDates);
+        // 1. Update Availability first (to ensure DB matches what we're repairing)
+        // Actually, we should save everything staged.
+        await saveStagedChanges();
 
+        // Modal is closed by saveStagedChanges, but proceedWithConflict logic continues if regenerate
         if (regenerate && conflict && schedule) {
             setIsRegenerating(true);
             try {
                 // 2. Perform Minimal Repair
-                // We need to pass the updated volunteer list (with new unavailability) to the repair function
-                // or ensure the repair function checks unavailability correctly.
-                // Since updateAvailability is async and might not propagate to 'volunteers' hook state instantly,
-                // we manually construct the updated volunteer list.
                 const updatedVolunteers = volunteers.map(v =>
-                    v.id === selectedVolunteer.id ? { ...v, unavailableDates: pendingDates } : v
+                    v.id === stagedVolunteer.id ? { ...v, unavailableDates: pendingDates } : v
                 );
 
                 let currentScheduleState = schedule;
                 const allChanges: string[] = [];
 
-                // Attempt repair for each conflicting date
                 conflict.forEach(dateStr => {
-                    const result = repairSchedule(currentScheduleState, updatedVolunteers, selectedVolunteer.id, dateStr);
+                    const result = repairSchedule(currentScheduleState, updatedVolunteers, stagedVolunteer.id, dateStr);
                     currentScheduleState = result.schedule;
                     allChanges.push(...result.changes);
                 });
 
-                // 3. Save Updated Schedule
                 const scheduleId = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}`;
                 await setDoc(doc(db, 'schedules', scheduleId), currentScheduleState);
-                setSchedule(currentScheduleState); // Update local hook state
+                setSchedule(currentScheduleState);
 
-                // 4. Show Diff to User
                 if (allChanges.length > 0) {
                     alert(`Schedule Updated:\n\n${allChanges.join('\n')}`);
                 } else {
                     alert("Schedule saved. No suitable replacements found for some slots.");
                 }
-
             } catch (e) {
                 console.error("Repair failed", e);
                 alert("Failed to repair schedule.");
@@ -142,22 +205,45 @@ export default function AvailabilityPage() {
     };
 
     const getUnavailableDatesText = (v: Volunteer) => {
-        if (!v.unavailableDates || v.unavailableDates.length === 0) return <span className="text-gray-400 italic">Available all month</span>;
+        const recurringDays = v.unavailableDaysOfWeek || [];
+        const specificDates = v.unavailableDates || [];
 
-        const datesInMonth = v.unavailableDates
+        const datesInMonth = specificDates
             .map(d => (d as any).toDate ? (d as any).toDate() : new Date(d as any))
             .filter(d => isSameMonth(d, currentMonth))
             .sort((a, b) => a.getTime() - b.getTime());
 
-        if (datesInMonth.length === 0) return <span className="text-gray-400 italic">Available all month</span>;
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        if (datesInMonth.length === 0 && recurringDays.length === 0)
+            return <span className="text-gray-400 italic">Available all month</span>;
 
         return (
-            <div className="flex flex-wrap gap-1">
-                {datesInMonth.map(d => (
-                    <span key={d.toISOString()} className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">
-                        {format(d, 'd MMM')}
-                    </span>
-                ))}
+            <div className="flex flex-col gap-1.5">
+                {recurringDays.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-tight">Every:</span>
+                        <div className="flex flex-wrap gap-1">
+                            {recurringDays.map(d => (
+                                <span key={d} className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[10px] rounded-full font-bold">
+                                    {dayNames[d]}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {datesInMonth.length > 0 && (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-tight">Dates:</span>
+                        <div className="flex flex-wrap gap-1">
+                            {datesInMonth.map(d => (
+                                <span key={d.toISOString()} className="px-2 py-0.5 bg-red-50 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[10px] rounded-full font-medium">
+                                    {format(d, 'd MMM')}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -206,9 +292,9 @@ export default function AvailabilityPage() {
                                                 <span className="font-medium text-gray-900 dark:text-gray-200">{v.name}</span>
                                                 <span className={clsx(
                                                     "text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded w-fit mt-1",
-                                                    v.volunteerLevel === 'Volunteer' ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                                                    v.volunteerLevel === 'Lector' ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
                                                 )}>
-                                                    {v.volunteerLevel || 'Lector'}
+                                                    {v.volunteerLevel || 'Trainee'}
                                                 </span>
                                             </div>
                                         </td>
@@ -230,8 +316,7 @@ export default function AvailabilityPage() {
                 </div>
             </div>
 
-            {/* Modal */}
-            {isModalOpen && selectedVolunteer && (
+            {isModalOpen && selectedVolunteer && stagedVolunteer && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={closeModal}>
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
                         {conflict ? (
@@ -292,13 +377,13 @@ export default function AvailabilityPage() {
                                         <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
                                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-3">Volunteer Level</label>
                                             <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg w-fit">
-                                                {(['Lector', 'Volunteer'] as const).map(level => (
+                                                {(['Trainee', 'Lector'] as const).map(level => (
                                                     <button
                                                         key={level}
-                                                        onClick={() => updateVolunteerLevel(selectedVolunteer.id, level)}
+                                                        onClick={() => stagedVolunteer && setStagedVolunteer({ ...stagedVolunteer, volunteerLevel: level })}
                                                         className={clsx(
                                                             "px-4 py-1.5 rounded-md text-sm font-medium transition-all",
-                                                            selectedVolunteer.volunteerLevel === level
+                                                            stagedVolunteer?.volunteerLevel === level
                                                                 ? "bg-white dark:bg-gray-600 text-indigo-700 dark:text-indigo-300 shadow-sm"
                                                                 : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                                                         )}
@@ -307,59 +392,153 @@ export default function AvailabilityPage() {
                                                     </button>
                                                 ))}
                                             </div>
-                                            <p className="mt-3 text-sm text-gray-600">
-                                                {selectedVolunteer.volunteerLevel === 'Lector'
-                                                    ? "• Can be assigned as Lector 1 or Lector 2"
+
+                                            {stagedVolunteer.volunteerLevel === 'Trainee' && (
+                                                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                                                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-2">Assign as</label>
+                                                    <div className="flex bg-gray-200 dark:bg-gray-700 p-1 rounded-lg w-fit">
+                                                        {(['Lector1', 'Lector2'] as const).map(role => {
+                                                            const currentPrefs = stagedVolunteer.traineeRolePreference || ['Lector2'];
+                                                            const isSelected = currentPrefs.includes(role);
+                                                            return (
+                                                                <button
+                                                                    key={role}
+                                                                    onClick={() => {
+                                                                        let newPrefs: Role[];
+                                                                        if (isSelected) {
+                                                                            // Prevent deselecting all roles (must have at least one)
+                                                                            if (currentPrefs.length > 1) {
+                                                                                newPrefs = currentPrefs.filter(p => p !== role);
+                                                                            } else {
+                                                                                newPrefs = currentPrefs;
+                                                                            }
+                                                                        } else {
+                                                                            newPrefs = [...currentPrefs, role];
+                                                                        }
+                                                                        setStagedVolunteer({ ...stagedVolunteer, traineeRolePreference: newPrefs });
+                                                                    }}
+                                                                    className={clsx(
+                                                                        "px-3 py-1 rounded-md text-xs font-medium transition-all",
+                                                                        isSelected
+                                                                            ? "bg-white dark:bg-gray-600 text-indigo-700 dark:text-indigo-300 shadow-sm"
+                                                                            : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                                                                    )}
+                                                                >
+                                                                    {role === 'Lector1' ? 'Lector 1' : 'Lector 2'}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                                                {stagedVolunteer.volunteerLevel === 'Trainee'
+                                                    ? `• New: Assigned as ${(stagedVolunteer.traineeRolePreference || ['Lector2']).map(r => r === 'Lector1' ? 'Lector 1' : 'Lector 2').join(' and ')}`
                                                     : "• Experienced: Can do all roles (Lector 1, Lector 2, Commentator)"}
                                             </p>
                                         </div>
 
-                                        {/* 2. Time Availability Profile */}
+                                        {/* 2. Weekday Mass Availability */}
                                         <div>
                                             <div className="flex items-center gap-2 mb-4">
                                                 <Clock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                                                <h4 className="font-bold text-gray-800 dark:text-gray-100">Time Availability Settings</h4>
+                                                <h4 className="font-bold text-gray-800 dark:text-gray-100">Weekday Mass Availability</h4>
                                             </div>
-                                            <TimeAvailabilityEditor
-                                                volunteer={selectedVolunteer}
-                                                onUpdate={(mode: 'always' | 'except' | 'only', slots: { start: string, end: string }[]) => {
-                                                    if (mode === 'only') updateTimeAvailability(selectedVolunteer.id, mode, slots, []);
-                                                    else if (mode === 'except') updateTimeAvailability(selectedVolunteer.id, mode, [], slots);
-                                                    else updateTimeAvailability(selectedVolunteer.id, mode, [], []);
+                                            <WeekdayMassAvailabilityEditor
+                                                volunteer={stagedVolunteer}
+                                                onUpdate={(slots: string[]) => {
+                                                    setStagedVolunteer({ ...stagedVolunteer, weekdayMassAvailability: slots });
                                                 }}
                                             />
                                         </div>
 
-                                        {/* 3. Calendar for Specific Dates */}
+                                        {/* 3. Recurring Weekly Unavailability - Linked to bottom toggle */}
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <RefreshCw className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                                                <h4 className="font-bold text-gray-800 dark:text-gray-100">Weekly Busy Days</h4>
+                                            </div>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 italic">
+                                                Quickly mark days of the week as busy. Status depends on the "Recurring" setting below.
+                                            </p>
+                                            <div className="grid grid-cols-7 gap-2">
+                                                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, i) => {
+                                                    const isRecurring = stagedVolunteer.unavailableDaysOfWeek?.includes(i);
+                                                    const monthDays = eachDayOfInterval({
+                                                        start: startOfMonth(currentMonth),
+                                                        end: endOfMonth(currentMonth)
+                                                    }).filter(d => d.getDay() === i);
+
+                                                    const isChecked = isRecurringMode
+                                                        ? isRecurring
+                                                        : (monthDays.length > 0 && monthDays.every(d => {
+                                                            const dateStr = format(d, 'yyyy-MM-dd');
+                                                            return isRecurring || stagedVolunteer.unavailableDates?.some(ud => {
+                                                                const dObj = (ud as any).toDate ? (ud as any).toDate() : new Date(ud as any);
+                                                                return format(dObj, 'yyyy-MM-dd') === dateStr;
+                                                            });
+                                                        }));
+
+                                                    return (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => {
+                                                                const ev = new CustomEvent('toggle-day', { detail: i });
+                                                                window.dispatchEvent(ev);
+                                                            }}
+                                                            className={clsx(
+                                                                "aspect-square rounded-lg flex items-center justify-center text-xs font-bold transition-all border-2",
+                                                                isChecked
+                                                                    ? (isRecurringMode ? "bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-300 ring-offset-1" : "bg-red-500 text-white border-red-400 shadow-md")
+                                                                    : (isRecurring ? "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800" : "bg-gray-100 dark:bg-gray-700 text-gray-400 border-transparent hover:bg-gray-200 dark:hover:bg-gray-600")
+                                                            )}
+                                                            title={isRecurringMode
+                                                                ? `${isRecurring ? 'Remove' : 'Set'} global recurring ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}`
+                                                                : `Busy on all ${['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][i]} in ${format(currentMonth, 'MMMM')}${isRecurring ? ' (Due to recurring setting)' : ''}`}
+                                                        >
+                                                            {label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* 4. Calendar for Specific Dates */}
                                         <div>
                                             <div className="flex items-center gap-2 mb-4">
                                                 <ChevronRight className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                                                <h4 className="font-bold text-gray-800 dark:text-gray-100">Mark Busy Dates</h4>
+                                                <h4 className="font-bold text-gray-800 dark:text-gray-100">Specific Busy Dates</h4>
                                             </div>
                                             <CalendarView
-                                                volunteer={selectedVolunteer}
+                                                volunteer={stagedVolunteer}
                                                 month={currentMonth}
-                                                onUpdate={handleUpdateAttempt}
+                                                onUpdate={(dates: Timestamp[]) => {
+                                                    setStagedVolunteer({ ...stagedVolunteer, unavailableDates: dates });
+                                                }}
+                                                onRecurringUpdate={(days: number[]) => {
+                                                    setStagedVolunteer({ ...stagedVolunteer, unavailableDaysOfWeek: days });
+                                                }}
+                                                isRecurringMode={isRecurringMode}
                                             />
                                         </div>
 
-                                        {/* 4. Unavailable Indefinitely */}
                                         <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
                                             <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-xl p-4">
                                                 <label className="flex items-center space-x-3 cursor-pointer">
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedVolunteer.isActive === false}
+                                                        checked={stagedVolunteer.isActive === false}
                                                         onChange={(e) => {
                                                             const isInactive = e.target.checked;
-                                                            toggleVolunteerStatus(selectedVolunteer.id, !isInactive);
+                                                            setStagedVolunteer({ ...stagedVolunteer, isActive: !isInactive });
                                                         }}
                                                         className="w-5 h-5 text-red-600 rounded border-gray-300 dark:border-gray-600 focus:ring-red-500 dark:bg-gray-800"
                                                     />
                                                     <div>
                                                         <span className="text-sm font-bold text-red-900 dark:text-red-300">Mark as Unavailable Indefinitely</span>
                                                         <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
-                                                            {selectedVolunteer.isActive === false
+                                                            {stagedVolunteer.isActive === false
                                                                 ? "Volunteer is currently disabled and won't be assigned."
                                                                 : "Disables volunteer for all future schedules."}
                                                         </p>
@@ -379,14 +558,26 @@ export default function AvailabilityPage() {
                                         className="px-4 py-2 text-red-600 hover:text-red-700 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors flex items-center gap-2"
                                     >
                                         <Trash2 className="w-4 h-4" />
-                                        Delete User
+                                        Delete
                                     </button>
-                                    <button
-                                        onClick={closeModal}
-                                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-                                    >
-                                        Done
-                                    </button>
+
+                                    <div className="flex items-center gap-4">
+                                        <label className="flex items-center gap-2 cursor-pointer group py-1">
+                                            <input
+                                                type="checkbox"
+                                                checked={isRecurringMode}
+                                                onChange={(e) => setIsRecurringMode(e.target.checked)}
+                                                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                                            />
+                                            <span className="text-xs font-bold text-gray-600 dark:text-gray-400 group-hover:text-indigo-600 transition-colors uppercase tracking-wider">Recurring</span>
+                                        </label>
+                                        <button
+                                            onClick={handleDone}
+                                            className="px-8 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-md transition-all flex items-center gap-2"
+                                        >
+                                            Done
+                                        </button>
+                                    </div>
                                 </div>
                             </>
                         )}
@@ -411,7 +602,13 @@ export default function AvailabilityPage() {
     );
 }
 
-function CalendarView({ volunteer, month, onUpdate }: { volunteer: Volunteer, month: Date, onUpdate: (dates: Timestamp[]) => void }) {
+function CalendarView({ volunteer, month, onUpdate, onRecurringUpdate, isRecurringMode }: {
+    volunteer: Volunteer,
+    month: Date,
+    onUpdate: (dates: Timestamp[]) => void,
+    onRecurringUpdate: (days: number[]) => void,
+    isRecurringMode: boolean
+}) {
     const [rangeStart, setRangeStart] = useState('');
     const [rangeEnd, setRangeEnd] = useState('');
 
@@ -420,7 +617,17 @@ function CalendarView({ volunteer, month, onUpdate }: { volunteer: Volunteer, mo
         end: endOfMonth(month)
     });
 
+    useEffect(() => {
+        const handler = (e: any) => toggleDayOfWeek(e.detail);
+        window.addEventListener('toggle-day', handler);
+        return () => window.removeEventListener('toggle-day', handler);
+    }, [volunteer, month, isRecurringMode]);
+
     const isUnavailable = (date: Date) => {
+        // 1. Check recurring
+        if (volunteer.unavailableDaysOfWeek?.includes(date.getDay())) return true;
+
+        // 2. Check specific dates
         if (!volunteer.unavailableDates) return false;
         const dateStr = format(date, 'yyyy-MM-dd');
         return volunteer.unavailableDates.some(d => {
@@ -484,10 +691,109 @@ function CalendarView({ volunteer, month, onUpdate }: { volunteer: Volunteer, mo
         setRangeEnd('');
     };
 
+    const handleSelectAll = () => {
+        const existingDates = volunteer.unavailableDates || [];
+        const monthStart = startOfMonth(month);
+        const monthEnd = endOfMonth(month);
+        const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+
+        // Keep dates from other months, replace current month with all days
+        const otherMonthDates = existingDates.filter(d => {
+            const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
+            return !isSameMonth(dObj, month);
+        });
+
+        const newMonthDates = monthDays.map(day => Timestamp.fromDate(day));
+        onUpdate([...otherMonthDates, ...newMonthDates]);
+    };
+
+    const handleClearAll = () => {
+        const existingDates = volunteer.unavailableDates || [];
+        const otherMonthDates = existingDates.filter(d => {
+            const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
+            return !isSameMonth(dObj, month);
+        });
+        onUpdate(otherMonthDates);
+    };
+
+    const toggleDayOfWeek = (dayIndex: number) => {
+        const currentGlobalDays = volunteer.unavailableDaysOfWeek || [];
+        const isCurrentlyRecurring = currentGlobalDays.includes(dayIndex);
+
+        // SMART TOGGLE: 
+        // 1. If we are in Recurring Mode -> Always update global pattern.
+        // 2. If we are NOT in Recurring Mode, but the day is ALREADY recurring globally -> Force global update (removes the global setting).
+        // This prevents the user from being "stuck" when trying to uncheck a recurring day with the toggle off.
+        if (isRecurringMode || isCurrentlyRecurring) {
+            let newRecurring: number[];
+            if (isCurrentlyRecurring) {
+                newRecurring = currentGlobalDays.filter(d => d !== dayIndex);
+            } else {
+                newRecurring = [...currentGlobalDays, dayIndex];
+
+                // Clean up any specific dates for this day in the current month if we are making it recurring
+                const existingDates = volunteer.unavailableDates || [];
+                const filteredDates = existingDates.filter(d => {
+                    const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
+                    return dObj.getDay() !== dayIndex;
+                });
+                if (filteredDates.length !== existingDates.length) {
+                    onUpdate(filteredDates);
+                }
+            }
+            onRecurringUpdate(newRecurring);
+        } else {
+            // NON-RECURRING LOGIC (Updates specific dates in the currently viewed month only)
+            const monthDays = days.filter(d => d.getDay() === dayIndex);
+            const allMarked = monthDays.every(d => isUnavailable(d));
+
+            const existingDates = volunteer.unavailableDates || [];
+            // Filter out any specific dates for this day in THIS month so we can toggle them cleanly
+            const otherDates = existingDates.filter(d => {
+                const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
+                const isSameMonthYear = dObj.getMonth() === month.getMonth() && dObj.getFullYear() === month.getFullYear();
+                return !(isSameMonthYear && dObj.getDay() === dayIndex);
+            });
+
+            if (allMarked) {
+                // If it was fully marked by specific dates, clear them.
+                onUpdate(otherDates);
+            } else {
+                // Mark all instances of this day in the current month as specific busy dates
+                const dayStrings = new Set(otherDates.map(d => {
+                    const dObj = (d as any).toDate ? (d as any).toDate() : new Date(d as any);
+                    return format(dObj, 'yyyy-MM-dd');
+                }));
+                const toAdd = monthDays
+                    .filter(d => !dayStrings.has(format(d, 'yyyy-MM-dd')))
+                    .map(d => Timestamp.fromDate(d));
+
+                onUpdate([...otherDates, ...toAdd]);
+            }
+        }
+    };
+
     return (
         <div>
             <div className="mb-4 bg-gray-50 dark:bg-gray-700/30 p-3 rounded-lg border border-gray-100 dark:border-gray-700">
-                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase">Mark Range Unavailable</div>
+                <div className="flex justify-between items-center mb-2">
+                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-tight">Mark Range Unavailable</div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={handleSelectAll}
+                            className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 uppercase"
+                        >
+                            Select All
+                        </button>
+                        <span className="text-gray-300 dark:text-gray-600">|</span>
+                        <button
+                            onClick={handleClearAll}
+                            className="text-[10px] font-bold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 uppercase"
+                        >
+                            Clear
+                        </button>
+                    </div>
+                </div>
                 <div className="flex items-end gap-2">
                     <div className="flex-1">
                         <label className="text-xs text-gray-400 dark:text-gray-500 block mb-1">From</label>
@@ -518,9 +824,28 @@ function CalendarView({ volunteer, month, onUpdate }: { volunteer: Volunteer, mo
             </div>
 
             <div className="text-center font-semibold text-gray-800 dark:text-gray-100 mb-4">{format(month, 'MMMM yyyy')}</div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2">
+
+            <div className="grid grid-cols-7 gap-1 text-center mb-1">
+                {[0, 1, 2, 3, 4, 5, 6].map(i => {
+                    const monthDays = days.filter(d => d.getDay() === i);
+                    const allMarked = monthDays.length > 0 && monthDays.every(d => isUnavailable(d));
+                    return (
+                        <div key={`check-${i}`} className="flex justify-center">
+                            <input
+                                type="checkbox"
+                                checked={allMarked}
+                                onChange={() => toggleDayOfWeek(i)}
+                                className="w-3.5 h-3.5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 transition-all cursor-pointer"
+                                title={`Toggle all ${['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'][i]}`}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] mb-2">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                    <div key={d} className="font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">{d}</div>
+                    <div key={d} className="font-bold text-gray-400 dark:text-gray-500 uppercase tracking-tighter">{d}</div>
                 ))}
             </div>
             <div className="grid grid-cols-7 gap-1">
@@ -556,115 +881,64 @@ function CalendarView({ volunteer, month, onUpdate }: { volunteer: Volunteer, mo
 }
 
 
-function TimeAvailabilityEditor({ volunteer, onUpdate }: { volunteer: Volunteer, onUpdate: (mode: 'always' | 'except' | 'only', slots: { start: string, end: string }[]) => void }) {
-    const slots = volunteer.availabilityMode === 'only'
-        ? (volunteer.availableTimeSlots || [])
-        : (volunteer.unavailableTimeSlots || []);
+function WeekdayMassAvailabilityEditor({ volunteer, onUpdate }: { volunteer: Volunteer, onUpdate: (slots: string[]) => void }) {
+    const availableSlots = volunteer.weekdayMassAvailability || [];
 
-    const [newStart, setNewStart] = useState('09:00');
-    const [newEnd, setNewEnd] = useState('10:00');
+    const massTimes = [
+        { id: '06:00', label: '6:00 AM' },
+        { id: '07:00', label: '7:00 AM' },
+        { id: '07:30', label: '7:30 AM' },
+        { id: '18:30', label: '6:30 PM' },
+    ];
 
-    const handleAddSlot = () => {
-        if (newStart >= newEnd) {
-            alert("End time must be after start time");
-            return;
+    const toggleSlot = (time: string) => {
+        let newSlots: string[];
+        if (availableSlots.includes(time)) {
+            newSlots = availableSlots.filter(t => t !== time);
+        } else {
+            newSlots = [...availableSlots, time];
         }
-        const newSlots = [...slots, { start: newStart, end: newEnd }];
-        onUpdate(volunteer.availabilityMode, newSlots);
-    };
-
-    const handleRemoveSlot = (index: number) => {
-        const newSlots = slots.filter((_, i) => i !== index);
-        onUpdate(volunteer.availabilityMode, newSlots);
-    };
-
-    const handleModeChange = (mode: 'always' | 'except' | 'only') => {
-        onUpdate(mode, []);
+        onUpdate(newSlots);
     };
 
     return (
         <div className="space-y-4">
-            <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-3">Time Availability Mode</label>
-                <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-lg w-fit">
-                    {(['always', 'except', 'only'] as const).map(mode => (
-                        <button
-                            key={mode}
-                            onClick={() => handleModeChange(mode)}
+            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 italic">
+                    Select which weekday masses this member is available for. All are selected by default.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                    {massTimes.map((time) => (
+                        <label
+                            key={time.id}
                             className={clsx(
-                                "px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize",
-                                volunteer.availabilityMode === mode
-                                    ? "bg-white dark:bg-gray-600 text-indigo-700 dark:text-indigo-300 shadow-sm"
-                                    : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                                "flex items-center p-3 rounded-lg border transition-all cursor-pointer select-none",
+                                availableSlots.includes(time.id)
+                                    ? "bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800"
+                                    : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-indigo-100 dark:hover:border-indigo-900/40"
                             )}
                         >
-                            {mode}
-                        </button>
+                            <input
+                                type="checkbox"
+                                checked={availableSlots.includes(time.id)}
+                                onChange={() => toggleSlot(time.id)}
+                                className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+                            />
+                            <span className={clsx(
+                                "ml-3 text-sm font-medium",
+                                availableSlots.includes(time.id) ? "text-indigo-900 dark:text-indigo-200" : "text-gray-700 dark:text-gray-300"
+                            )}>
+                                {time.label}
+                            </span>
+                        </label>
                     ))}
                 </div>
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
-                    {volunteer.availabilityMode === 'always' && "• Volunteer is available at all mass times."}
-                    {volunteer.availabilityMode === 'except' && "• Volunteer is available EXCEPT during the specified slots."}
-                    {volunteer.availabilityMode === 'only' && "• Volunteer is ONLY available during the specified slots."}
-                </p>
             </div>
-
-            {volunteer.availabilityMode !== 'always' && (
-                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4 border border-gray-100 dark:border-gray-700 space-y-4">
-                    <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-gray-400 dark:text-gray-500" />
-                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                            {volunteer.availabilityMode === 'only' ? 'Available Slots' : 'Unavailable Slots'}
-                        </span>
-                    </div>
-
-                    <div className="space-y-2">
-                        {slots.map((slot, idx) => (
-                            <div key={idx} className="flex items-center justify-between bg-white dark:bg-gray-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 group">
-                                <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                                    {format(new Date(`2000-01-01T${slot.start}`), 'h:mm a')} - {format(new Date(`2000-01-01T${slot.end}`), 'h:mm a')}
-                                </span>
-                                <button
-                                    onClick={() => handleRemoveSlot(idx)}
-                                    className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/40 rounded-md transition-all opacity-0 group-hover:opacity-100"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="flex items-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-600">
-                        <div className="flex-1">
-                            <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase font-bold block mb-1">From</label>
-                            <input
-                                type="time"
-                                className="w-full text-sm p-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                value={newStart}
-                                onChange={e => setNewStart(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex-1">
-                            <label className="text-[10px] text-gray-400 dark:text-gray-500 uppercase font-bold block mb-1">To</label>
-                            <input
-                                type="time"
-                                className="w-full text-sm p-2 border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                value={newEnd}
-                                onChange={e => setNewEnd(e.target.value)}
-                            />
-                        </div>
-                        <button
-                            onClick={handleAddSlot}
-                            className="bg-indigo-600 text-white p-2.5 rounded-lg hover:bg-indigo-700 transition-all shadow-sm"
-                        >
-                            <Plus className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
+
 
 function AddVolunteerForm({ onAdd }: { onAdd: (name: string) => void }) {
 

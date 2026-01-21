@@ -15,6 +15,12 @@ const safeToDate = (dt: any): Date => {
 };
 
 const isAvailable = (volunteer: Volunteer, date: Date): boolean => {
+    // 1. Check recurring weekly unavailability
+    if (volunteer.unavailableDaysOfWeek?.includes(date.getDay())) {
+        return false;
+    }
+
+    // 2. Check specific dates
     if (!volunteer.unavailableDates) return true;
     const dateStr = format(date, 'yyyy-MM-dd');
     return !volunteer.unavailableDates.some(ud => {
@@ -23,34 +29,18 @@ const isAvailable = (volunteer: Volunteer, date: Date): boolean => {
     });
 };
 
-// Helper to check if volunteer is available at a specific time
-const isAvailableAtTime = (volunteer: Volunteer, massDate: Date): boolean => {
+// Helper to check if volunteer is available at a specific mass time
+const isAvailableAtTime = (volunteer: Volunteer, massDate: Date, massType: string): boolean => {
     const massTime = format(massDate, 'HH:mm');
 
-    // If mode is 'always', they're available at all times
-    if (volunteer.availabilityMode === 'always') {
-        return true;
+    // Weekday Availability check only for Weekday masses
+    if (massType === 'Weekday') {
+        if (volunteer.weekdayMassAvailability) {
+            return volunteer.weekdayMassAvailability.includes(massTime);
+        }
     }
 
-    // Helper to check if time falls within a slot
-    const isTimeInSlot = (time: string, slot: { start: string; end: string }): boolean => {
-        return time >= slot.start && time <= slot.end;
-    };
-
-    // If mode is 'except', check if time is in unavailable slots
-    if (volunteer.availabilityMode === 'except') {
-        const unavailableSlots = volunteer.unavailableTimeSlots || [];
-        const isUnavailable = unavailableSlots.some(slot => isTimeInSlot(massTime, slot));
-        return !isUnavailable; // Available if NOT in unavailable slots
-    }
-
-    // If mode is 'only', check if time is in available slots
-    if (volunteer.availabilityMode === 'only') {
-        const availableSlots = volunteer.availableTimeSlots || [];
-        return availableSlots.some(slot => isTimeInSlot(massTime, slot));
-    }
-
-    return true; // Default to available
+    return true; // Default to available (Sunday/Special or if field missing)
 };
 
 export const generateSchedule = (
@@ -146,8 +136,8 @@ export const generateSchedule = (
                 dayMasses.push(createMass(day, time, 'Sunday'));
             });
         } else if (isSat) {
-            // Saturday Morning: 6:00 AM, 7:30 AM (Weekday type)
-            ['06:00', '07:30'].forEach(time => {
+            // Saturday Morning: 6:00 AM, 7:00 AM, 7:30 AM (Weekday type)
+            ['06:00', '07:00', '07:30'].forEach(time => {
                 dayMasses.push(createMass(day, time, 'Weekday'));
             });
             // Saturday Evening: Anticipated Sunday Masses - 5:30 PM, 6:30 PM, 7:30 PM
@@ -155,8 +145,8 @@ export const generateSchedule = (
                 dayMasses.push(createMass(day, time, 'Sunday'));
             });
         } else {
-            // Weekday (Mon-Fri): 6:00 AM, 7:30 AM, 6:30 PM
-            ['06:00', '07:30', '18:30'].forEach(time => {
+            // Weekday (Mon-Fri): 6:00 AM, 7:00 AM, 7:30 AM, 18:30 (6:30 PM)
+            ['06:00', '07:00', '07:30', '18:30'].forEach(time => {
                 dayMasses.push(createMass(day, time, 'Weekday'));
             });
         }
@@ -258,73 +248,60 @@ export const findBestCandidate = (
     lastPartner: Record<string, string>
 ): Volunteer | null => {
     const dateStr = format(date, 'yyyy-MM-dd');
+    const isSatMatins = isSaturday(date) && massDate.getHours() < 12;
 
-    // Helper function to filter candidates with all constraints
-    const filterCandidates = () => {
-        return volunteers.filter(v => {
-            // 0. Must be active
+    for (let pass = 0; pass <= 4; pass++) {
+        const candidates = volunteers.filter(v => {
             if (v.isActive === false) return false;
+            if (currentPartners.includes(v.id)) return false;
 
-            // NEW: Volunteer Level Check
-            // Lector level can do Lector1 or Lector2
-            // Volunteer level can do all roles
-            if (v.volunteerLevel === 'Lector' && role !== 'Lector1' && role !== 'Lector2') {
-                return false;
+            // Pass 4: Relax unavailability (Calendar Red)
+            if (pass < 4 && !isAvailable(v, date)) return false;
+
+            // Pass 3: Relax Time-based / Trainee preferences
+            if (pass < 3 && !isAvailableAtTime(v, massDate, massType)) return false;
+            if (v.volunteerLevel === 'Trainee') {
+                const preferences = v.traineeRolePreference || ['Lector2'];
+                if (!preferences.includes(role)) return false;
             }
 
-            // 1. Availability check: Date-based
-            if (!isAvailable(v, date)) return false;
+            // Pass 2: Relax Same Day
+            if (pass < 2 && history[v.id].includes(dateStr)) return false;
 
-            // 2. Availability check: Time-based
-            if (!isAvailableAtTime(v, massDate)) return false;
+            // Pass 1: Relax Consecutive Days / Weekday Limit
+            if (pass === 0) {
+                const prevDate = new Date(dateStr);
+                prevDate.setDate(prevDate.getDate() - 1);
+                if (history[v.id].includes(format(prevDate, 'yyyy-MM-dd'))) return false;
 
-            // 2. No assignments for 2 consecutive days
-            const prevDate = new Date(dateStr);
-            prevDate.setDate(prevDate.getDate() - 1);
-            const prevDateStr = format(prevDate, 'yyyy-MM-dd');
-            if (history[v.id].includes(prevDateStr)) return false;
+                const nextDate = new Date(dateStr);
+                nextDate.setDate(nextDate.getDate() + 1);
+                if (history[v.id].includes(format(nextDate, 'yyyy-MM-dd'))) return false;
 
-            // 3. No two assignments in one day (Constraint 3)
-            if (history[v.id].includes(dateStr)) return false;
-
-            // 4. Weekday constraint: only 1 weekday schedule a week
-            if (massType === 'Weekday') {
-                const count = weeklyCounts[v.id][weekNum] || 0;
-                if (count >= 1) return false;
+                if (massType === 'Weekday' && !isSatMatins) {
+                    const count = weeklyCounts[v.id][weekNum] || 0;
+                    if (count >= 1) return false;
+                }
             }
 
             return true;
         });
-    };
 
-    let candidates = filterCandidates();
-
-    // Scoring/Sorting candidates
-    candidates.sort((a, b) => {
-        let scoreA = 0;
-        let scoreB = 0;
-
-        // Prefer those with fewer assignments overall (Fairness)
-        scoreA -= history[a.id].length * 10;
-        scoreB -= history[b.id].length * 10;
-
-        // Rotation: Switch roles
-        if (lastRole[a.id] && lastRole[a.id] !== role) scoreA += 5;
-        if (lastRole[b.id] && lastRole[b.id] !== role) scoreB += 5;
-
-        // Rotation: Different partner
-        const aHadPartner = currentPartners.some(p => lastPartner[a.id] === p);
-        const bHadPartner = currentPartners.some(p => lastPartner[b.id] === p);
-        if (!aHadPartner) scoreA += 3;
-        if (!bHadPartner) scoreB += 3;
-
-        // Add small random factor to break ties and create variation
-        const randomFactor = (Math.random() - 0.5) * 2;
-
-        return (scoreB - scoreA) + randomFactor; // Descending score with randomness
-    });
-
-    return candidates.length > 0 ? candidates[0] : null;
+        if (candidates.length > 0) {
+            candidates.sort((a, b) => {
+                let sA = 0, sB = 0;
+                sA -= history[a.id].length * 10;
+                sB -= history[b.id].length * 10;
+                if (lastRole[a.id] !== role) sA += 5;
+                if (lastRole[b.id] !== role) sB += 5;
+                if (!currentPartners.includes(lastPartner[a.id])) sA += 3;
+                if (!currentPartners.includes(lastPartner[b.id])) sB += 3;
+                return (sB - sA) + (Math.random() - 0.5) * 5;
+            });
+            return candidates[0];
+        }
+    }
+    return null;
 };
 
 // Helper to build tracking stats from an existing schedule
