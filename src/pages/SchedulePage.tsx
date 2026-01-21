@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useVolunteers, useSchedule, useMassTimings, useAuth } from '../lib/hooks';
-import { generateSchedule, findBestCandidate, buildStatsFromSchedule } from '../lib/scheduler';
-import type { Role, Mass, MassTiming } from '../types';
-import { Calendar as CalendarIcon, Loader2, Plus, X, Edit2, Clock, Trash2 } from 'lucide-react';
+import { generateSchedule, findBestCandidate, buildStatsFromSchedule, generateEmptySchedule } from '../lib/scheduler';
+import type { Role, Mass, MassTiming, Volunteer } from '../types';
+import { Calendar as CalendarIcon, Loader2, Plus, X, Edit2, Clock, Trash2, Lock, Unlock, Check } from 'lucide-react';
 import { doc, setDoc, Timestamp, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { format, getWeek } from 'date-fns';
@@ -21,6 +21,8 @@ export default function SchedulePage() {
     const [isAddMassOpen, setIsAddMassOpen] = useState(false);
     const [isTimingsOpen, setIsTimingsOpen] = useState(false);
     const [editingMassId, setEditingMassId] = useState<string | null>(null);
+    const [quickAssignCell, setQuickAssignCell] = useState<{ massId: string, role: Role } | null>(null);
+
     const editingMass = editingMassId ? schedule?.masses.find((m: Mass) => m.id === editingMassId) : null;
 
     const handleAddMass = async (date: Date, name: string, description?: string, isHighlighted?: boolean) => {
@@ -137,6 +139,70 @@ export default function SchedulePage() {
     // fetchSchedule is now handled by the hook
 
 
+    const handleToggleLock = async (massId: string) => {
+        if (!schedule) return;
+        const updatedMasses = schedule.masses.map((m: Mass) =>
+            m.id === massId ? { ...m, isLocked: !m.isLocked } : m
+        );
+        const updatedSchedule = { ...schedule, masses: updatedMasses };
+        setSchedule(updatedSchedule);
+        const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+        await setDoc(doc(db, 'schedules', scheduleId), updatedSchedule);
+    };
+
+    const handleBulkLock = async (type: 'Sunday' | 'All' | 'Unlock') => {
+        if (!schedule) return;
+        const updatedMasses = schedule.masses.map((m: Mass) => {
+            if (type === 'Sunday' && m.type === 'Sunday') return { ...m, isLocked: true };
+            if (type === 'All') return { ...m, isLocked: true };
+            if (type === 'Unlock') return { ...m, isLocked: false };
+            return m;
+        });
+        const updatedSchedule = { ...schedule, masses: updatedMasses };
+        setSchedule(updatedSchedule);
+        const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+        await setDoc(doc(db, 'schedules', scheduleId), updatedSchedule);
+    };
+
+    const handleGenerateEmpty = async () => {
+        if (schedule?.masses?.length > 0) {
+            if (!window.confirm("This will replace your current schedule with empty slots. Continue?")) return;
+        }
+        setGenerating(true);
+        try {
+            const currentTimings = (schedule?.massTimings && schedule.massTimings.length > 0)
+                ? schedule.massTimings
+                : defaultTimings;
+
+            const empty = generateEmptySchedule(year, month - 1, currentTimings);
+            setSchedule(empty);
+            const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+            await setDoc(doc(db, 'schedules', scheduleId), empty);
+        } catch (e) {
+            console.error("Error generating empty schedule", e);
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    const handleQuickAssign = async (massId: string, role: Role, volunteerId: string | null) => {
+        if (!schedule) return;
+        const updatedMasses = schedule.masses.map((m: Mass) => {
+            if (m.id === massId) {
+                return {
+                    ...m,
+                    assignments: { ...m.assignments, [role]: volunteerId }
+                };
+            }
+            return m;
+        });
+        const updatedSchedule = { ...schedule, masses: updatedMasses };
+        setSchedule(updatedSchedule);
+        const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+        await setDoc(doc(db, 'schedules', scheduleId), updatedSchedule);
+        setQuickAssignCell(null);
+    };
+
     const handleGenerate = async () => {
         if (!volunteers.length) return;
         setGenerating(true);
@@ -232,15 +298,24 @@ export default function SchedulePage() {
                 <div className="text-center py-10 bg-gray-50 dark:bg-gray-900 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl space-y-4">
                     <CalendarIcon className="w-12 h-12 mx-auto text-gray-400 dark:text-gray-600" />
                     <p className="text-gray-500 dark:text-gray-400">No schedule found for this month.</p>
-                    <button
-                        onClick={handleGenerate}
-                        disabled={generating}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center space-x-2 mx-auto"
-                    >
-                        {generating && <Loader2 className="w-4 h-4 animate-spin" />}
-                        {generating && <Loader2 className="w-4 h-4 animate-spin" />}
-                        <span>Generate Schedule</span>
-                    </button>
+                    <div className="flex gap-2 mx-auto">
+                        <button
+                            onClick={handleGenerate}
+                            disabled={generating}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center space-x-2"
+                        >
+                            {generating && <Loader2 className="w-4 h-4 animate-spin" />}
+                            <span>Generate Full Schedule</span>
+                        </button>
+                        <button
+                            onClick={handleGenerateEmpty}
+                            disabled={generating}
+                            className="px-6 py-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 flex items-center justify-center space-x-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            <span>Create Empty Schedule</span>
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -256,23 +331,48 @@ export default function SchedulePage() {
                                 className="text-sm px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium flex items-center gap-2"
                             >
                                 <Plus className="w-4 h-4" />
-                                Add Special Mass
+                                Special Mass
                             </button>
                             <button
                                 onClick={() => setIsTimingsOpen(true)}
                                 className="text-sm px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 font-medium flex items-center gap-2"
                             >
                                 <Clock className="w-4 h-4" />
-                                Mass Timings
+                                Timings
+                            </button>
+                            <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+                            <button
+                                onClick={() => handleBulkLock('Sunday')}
+                                className="text-xs px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 font-medium flex items-center gap-1.5"
+                                title="Lock all Sunday masses"
+                            >
+                                <Lock className="w-3.5 h-3.5" />
+                                Lock Sundays
+                            </button>
+                            <button
+                                onClick={() => handleBulkLock('Unlock')}
+                                className="text-xs px-2.5 py-1.5 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 font-medium flex items-center gap-1.5"
+                            >
+                                <Unlock className="w-3.5 h-3.5" />
+                                Unlock All
                             </button>
                         </div>
-                        <button
-                            onClick={handleGenerate}
-                            disabled={generating}
-                            className="text-sm text-indigo-600 hover:underline disabled:opacity-50 disabled:no-underline"
-                        >
-                            {generating ? 'Regenerating...' : 'Regenerate'}
-                        </button>
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={handleGenerateEmpty}
+                                className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                            >
+                                Empty Template
+                            </button>
+                            <button
+                                onClick={handleGenerate}
+                                disabled={generating}
+                                className="px-4 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {generating && <Loader2 className="w-4 h-4 animate-spin" />}
+                                {generating ? 'Regenerating...' : 'Regenerate Unlocked'}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors duration-200">
@@ -282,11 +382,11 @@ export default function SchedulePage() {
                                     <tr>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">Date</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Time</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-24">Type</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector1</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector2</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-32">Type</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector 1</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Lector 2</th>
                                         <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Commentator</th>
-                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                                        <th className="px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right w-28">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -326,26 +426,62 @@ export default function SchedulePage() {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    {getVolunteerName(mass.assignments.Lector1)}
+                                                    <QuickAssign
+                                                        label={getVolunteerName(mass.assignments.Lector1)}
+                                                        isActive={quickAssignCell?.massId === mass.id && quickAssignCell?.role === 'Lector1'}
+                                                        onActivate={() => setQuickAssignCell({ massId: mass.id, role: 'Lector1' })}
+                                                        onDeactivate={() => setQuickAssignCell(null)}
+                                                        onSelect={(vid: string | null) => handleQuickAssign(mass.id, 'Lector1', vid)}
+                                                        volunteers={volunteers}
+                                                        currentId={mass.assignments.Lector1}
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    {mass.type === 'Sunday' ? getVolunteerName(mass.assignments.Lector2) : <span className="text-gray-300 dark:text-gray-600">-</span>}
+                                                    {mass.type === 'Sunday' ? (
+                                                        <QuickAssign
+                                                            label={getVolunteerName(mass.assignments.Lector2)}
+                                                            isActive={quickAssignCell?.massId === mass.id && quickAssignCell?.role === 'Lector2'}
+                                                            onActivate={() => setQuickAssignCell({ massId: mass.id, role: 'Lector2' })}
+                                                            onDeactivate={() => setQuickAssignCell(null)}
+                                                            onSelect={(vid: string | null) => handleQuickAssign(mass.id, 'Lector2', vid)}
+                                                            volunteers={volunteers}
+                                                            currentId={mass.assignments.Lector2}
+                                                        />
+                                                    ) : <span className="text-gray-300 dark:text-gray-600">-</span>}
                                                 </td>
                                                 <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                                    {getVolunteerName(mass.assignments.Commentator)}
+                                                    <QuickAssign
+                                                        label={getVolunteerName(mass.assignments.Commentator)}
+                                                        isActive={quickAssignCell?.massId === mass.id && quickAssignCell?.role === 'Commentator'}
+                                                        onActivate={() => setQuickAssignCell({ massId: mass.id, role: 'Commentator' })}
+                                                        onDeactivate={() => setQuickAssignCell(null)}
+                                                        onSelect={(vid: string | null) => handleQuickAssign(mass.id, 'Commentator', vid)}
+                                                        volunteers={volunteers}
+                                                        currentId={mass.assignments.Commentator}
+                                                    />
                                                 </td>
                                                 <td className="px-4 py-2 text-right">
-                                                    <div className="flex justify-end gap-1">
+                                                    <div className="flex justify-end gap-0.5">
+                                                        <button
+                                                            onClick={() => handleToggleLock(mass.id)}
+                                                            className={`p-1.5 rounded-full transition-colors ${mass.isLocked
+                                                                ? 'text-amber-600 bg-amber-100 hover:bg-amber-200'
+                                                                : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                                }`}
+                                                            title={mass.isLocked ? "Unlock mass" : "Lock mass"}
+                                                        >
+                                                            {mass.isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                                                        </button>
                                                         <button
                                                             onClick={() => setEditingMassId(mass.id)}
-                                                            className="text-indigo-600 hover:text-indigo-800 p-1.5 rounded-full hover:bg-indigo-50 transition-colors"
+                                                            className="text-indigo-600 hover:text-indigo-800 p-1.5 rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors"
                                                             title="Edit Mass"
                                                         >
                                                             <Edit2 className="w-4 h-4" />
                                                         </button>
                                                         <button
                                                             onClick={() => handleDeleteMass(mass.id)}
-                                                            className="text-red-600 hover:text-red-800 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                                                            className="text-red-600 hover:text-red-800 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/40 transition-colors"
                                                             title="Delete Mass"
                                                         >
                                                             <Trash2 className="w-4 h-4" />
@@ -754,6 +890,95 @@ function EditMassModal({ mass, onClose, onSave }: { mass: Mass, onClose: () => v
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    );
+}
+
+function QuickAssign({
+    label,
+    isActive,
+    onActivate,
+    onDeactivate,
+    onSelect,
+    volunteers,
+    currentId
+}: {
+    label: string,
+    isActive: boolean,
+    onActivate: () => void,
+    onDeactivate: () => void,
+    onSelect: (vid: string | null) => void,
+    volunteers: Volunteer[],
+    currentId: string | null
+}) {
+    const [search, setSearch] = useState('');
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                onDeactivate();
+            }
+        };
+        if (isActive) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [isActive, onDeactivate]);
+
+    const filtered = volunteers.filter(v =>
+        v.isActive !== false &&
+        v.name.toLowerCase().includes(search.toLowerCase())
+    ).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (!isActive) {
+        return (
+            <button
+                onClick={onActivate}
+                className={`text-left w-full px-1 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${label === 'Unassigned' ? 'text-red-500 font-medium italic' : 'text-gray-900 dark:text-gray-200'
+                    }`}
+            >
+                {label}
+            </button>
+        );
+    }
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <div className="absolute z-20 left-0 top-0 mt-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
+                    <input
+                        autoFocus
+                        type="text"
+                        placeholder="Search volunteer..."
+                        className="w-full px-3 py-1.5 text-sm bg-gray-50 dark:bg-gray-900 border-none rounded-md focus:ring-1 focus:ring-indigo-500"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                    />
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                    <button
+                        onClick={() => onSelect(null)}
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center justify-between"
+                    >
+                        <span>Unassign</span>
+                        {currentId === null && <Check className="w-4 h-4" />}
+                    </button>
+                    {filtered.map(v => (
+                        <button
+                            key={v.id}
+                            onClick={() => onSelect(v.id)}
+                            className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-between"
+                        >
+                            <span>{v.name}</span>
+                            {currentId === v.id && <Check className="w-4 h-4 text-indigo-600" />}
+                        </button>
+                    ))}
+                    {filtered.length === 0 && (
+                        <div className="px-4 py-3 text-xs text-gray-500 italic">No volunteers found</div>
+                    )}
+                </div>
             </div>
         </div>
     );

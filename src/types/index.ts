@@ -56,6 +56,7 @@ export interface Mass {
     // NEW: Enhanced descriptions for special events
     description?: string; // Detailed description (e.g., "Solemnity of the Immaculate Conception")
     isHighlighted?: boolean; // Whether to visually highlight this event
+    isLocked?: boolean; // NEW: Lock assignments to prevent overwrite during regeneration
 }
 
 export interface MonthlySchedule {

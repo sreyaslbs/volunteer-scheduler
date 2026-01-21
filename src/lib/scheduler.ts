@@ -61,8 +61,9 @@ export const generateSchedule = (
             ? existingMasses
                 .filter(m => {
                     if (!m) return false;
-                    if (m.type !== 'Special') return false;
-                    return true;
+                    // Keep Special masses or any masses that are locked
+                    if (m.type === 'Special' || m.isLocked) return true;
+                    return false;
                 })
                 .map((m, index) => {
                     try {
@@ -106,7 +107,7 @@ export const generateSchedule = (
         weeklyCounts[v.id] = {};
     });
 
-    // CRITICAL: Pre-populate tracking from existing Special masses
+    // CRITICAL: Pre-populate tracking from existing Special or Locked masses
     schedule.masses.forEach(mass => {
         if (!mass || !mass.assignments) return;
         const date = safeToDate(mass.date);
@@ -116,6 +117,7 @@ export const generateSchedule = (
         Object.entries(mass.assignments).forEach(([role, vid]) => {
             if (vid && assignmentsHistory[vid]) {
                 assignmentsHistory[vid].push(dateStr);
+                // Count weekday masses for the weekly limit
                 if (mass.type === 'Weekday') {
                     weeklyCounts[vid][weekNum] = (weeklyCounts[vid][weekNum] || 0) + 1;
                 }
@@ -419,4 +421,58 @@ export const repairSchedule = (
     });
 
     return { schedule, changes };
+};
+
+export const generateEmptySchedule = (
+    year: number,
+    month: number, // 0-indexed
+    massTimings?: MassTiming[]
+): MonthlySchedule => {
+    const startDate = startOfMonth(new Date(year, month));
+    const endDate = endOfMonth(startDate);
+    const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+    const schedule: MonthlySchedule = {
+        id: format(startDate, 'yyyy-MM'),
+        month,
+        year,
+        masses: [],
+        massTimings: massTimings
+    };
+
+    days.forEach(day => {
+        const dayOfWeek = day.getDay();
+        let dayMasses: Mass[] = [];
+
+        if (massTimings && massTimings.length > 0) {
+            massTimings
+                .filter(t => t.dayOfWeek === dayOfWeek)
+                .forEach(t => {
+                    dayMasses.push(createMass(day, t.time, t.type));
+                });
+        } else {
+            const isSat = isSaturday(day);
+            const isSun = isSunday(day);
+            if (isSun) {
+                ['06:00', '07:30', '09:00', '10:30', '16:00', '17:30', '19:00'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Sunday'));
+                });
+            } else if (isSat) {
+                ['06:00', '07:00', '07:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Weekday'));
+                });
+                ['17:30', '18:30', '19:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Sunday'));
+                });
+            } else {
+                ['06:00', '07:00', '07:30', '18:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Weekday'));
+                });
+            }
+        }
+
+        schedule.masses.push(...dayMasses);
+    });
+
+    return schedule;
 };
