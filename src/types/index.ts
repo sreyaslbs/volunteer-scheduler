@@ -14,6 +14,13 @@ export interface TimeSlot {
     end: string;   // Format: "HH:mm" (24-hour)
 }
 
+export interface MassTiming {
+    id: string;
+    dayOfWeek: number; // 0=Sun, 1=Mon, ..., 6=Sat
+    time: string; // "HH:mm"
+    type: 'Weekday' | 'Sunday';
+}
+
 export interface Volunteer {
     id: string;
     name: string;
@@ -56,6 +63,7 @@ export interface MonthlySchedule {
     month: number; // 0-11
     year: number;
     masses: Mass[];
+    massTimings?: MassTiming[]; // Optional overrides for this month
 }
 
 export type UserRole = 'Admin' | 'Manager' | 'Volunteer';

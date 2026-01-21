@@ -3,7 +3,7 @@ import { collection, getDocs, Timestamp, doc, updateDoc, writeBatch, setDoc, get
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db } from './firebase';
-import type { Volunteer, AppUser, UserRole, Role } from '../types';
+import type { Volunteer, AppUser, UserRole, Role, MassTiming } from '../types';
 
 const ADMIN_EMAIL = 'mailsuren2019@gmail.com';
 
@@ -390,14 +390,8 @@ export const useSchedule = (month: number, year: number) => {
         const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
         const cacheKey = `schedule_${scheduleId}`;
         try {
-            // Race Firestore against a 2-second timeout
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Timeout')), 2000)
-            );
             const docRef = doc(db, 'schedules', scheduleId);
-            const docPromise = getDoc(docRef);
-
-            const docSnap = await Promise.race([docPromise, timeoutPromise]) as any;
+            const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
                 const data = docSnap.data();
@@ -408,7 +402,6 @@ export const useSchedule = (month: number, year: number) => {
             }
         } catch (e) {
             console.warn("Firebase slow or failed, falling back to cache.", e);
-            // Fallback to local storage
             const cached = localStorage.getItem(cacheKey);
             if (cached) {
                 const parsed = JSON.parse(cached);
@@ -434,9 +427,69 @@ export const useSchedule = (month: number, year: number) => {
         }
     };
 
+    const updateMonthMassTimings = async (timings: MassTiming[]) => {
+        if (!schedule) return;
+        const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+        const ref = doc(db, 'schedules', scheduleId);
+
+        const updatedSchedule = { ...schedule, massTimings: timings };
+        await updateDoc(ref, { massTimings: timings });
+        setSchedule(updatedSchedule);
+        localStorage.setItem(`schedule_${scheduleId}`, JSON.stringify(updatedSchedule));
+    };
+
     useEffect(() => {
         fetchSchedule();
     }, [month, year]);
 
-    return { schedule, loading, fetchSchedule, setSchedule };
+    return { schedule, loading, fetchSchedule, setSchedule, updateMonthMassTimings };
+};
+
+export const useMassTimings = () => {
+    const [defaultTimings, setDefaultTimings] = useState<MassTiming[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const fetchDefaultTimings = async () => {
+        setLoading(true);
+        try {
+            const docRef = doc(db, 'settings', 'massTimings');
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                setDefaultTimings(docSnap.data().timings || []);
+            } else {
+                // Fallback to hardcoded defaults if not in Firestore
+                const defaults: MassTiming[] = [
+                    // Sunday
+                    ...['06:00', '07:30', '09:00', '10:30', '16:00', '17:30', '19:00'].map(t => ({ id: crypto.randomUUID(), dayOfWeek: 0, time: t, type: 'Sunday' as const })),
+                    // Monday - Friday
+                    ...[1, 2, 3, 4, 5].flatMap(d => ['06:00', '07:00', '07:30', '18:30'].map(t => ({ id: crypto.randomUUID(), dayOfWeek: d, time: t, type: 'Weekday' as const }))),
+                    // Saturday
+                    ...['06:00', '07:00', '07:30'].map(t => ({ id: crypto.randomUUID(), dayOfWeek: 6, time: t, type: 'Weekday' as const })),
+                    ...['17:30', '18:30', '19:30'].map(t => ({ id: crypto.randomUUID(), dayOfWeek: 6, time: t, type: 'Sunday' as const })),
+                ];
+                setDefaultTimings(defaults);
+            }
+        } catch (e) {
+            console.error("Error fetching mass timings", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const updateDefaultTimings = async (timings: MassTiming[]) => {
+        try {
+            const docRef = doc(db, 'settings', 'massTimings');
+            await setDoc(docRef, { timings });
+            setDefaultTimings(timings);
+        } catch (e) {
+            console.error("Error updating mass timings", e);
+            throw e;
+        }
+    };
+
+    useEffect(() => {
+        fetchDefaultTimings();
+    }, []);
+
+    return { defaultTimings, loading, updateDefaultTimings };
 };

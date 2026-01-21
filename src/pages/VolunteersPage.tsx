@@ -296,7 +296,7 @@ export default function VolunteersPage() {
                     <div className="text-center px-4 flex flex-col gap-1">
                         <h1 className="text-base font-extrabold text-gray-700 tracking-wider uppercase">Ministry of Lectors, Commentators and Psalmists</h1>
                         <p className="text-base font-extrabold text-black leading-tight tracking-tight uppercase">OUR LADY OF THE PILLAR PARISH</p>
-                        <h2 className="text-xs font-bold text-gray-500 mt-1 italic">Volunteer Summary - {format(new Date(year, month - 1), 'MMMM yyyy')}</h2>
+                        <h2 className="text-xs font-bold text-gray-500 mt-1 italic">One Look Schedule - {format(new Date(year, month - 1), 'MMMM yyyy')}</h2>
                     </div>
 
                     {/* Right Emblem */}

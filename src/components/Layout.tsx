@@ -96,7 +96,7 @@ export default function Layout() {
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:text-gray-100 flex flex-col font-sans text-gray-900 relative transition-colors duration-200">
             {/* Watermark */}
             <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center opacity-5 overflow-hidden">
-                <img src="/parish-logo.png" className="w-[500px] h-[500px] md:w-[800px] md:h-[800px] object-contain grayscale" alt="Watermark" />
+                <img src="/ministry-logo.png" className="w-[500px] h-[500px] md:w-[800px] md:h-[800px] object-contain grayscale" alt="Watermark" />
             </div>
 
             <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10 flex flex-col transition-colors duration-200">

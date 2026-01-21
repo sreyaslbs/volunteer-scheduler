@@ -1,15 +1,18 @@
-import { User as UserIcon, LogOut, Mail, ShieldCheck, Smartphone, UserPlus, Trash2, ShieldAlert, Moon, Sun } from 'lucide-react';
+import { User as UserIcon, LogOut, Mail, ShieldCheck, Smartphone, UserPlus, Trash2, ShieldAlert, Moon, Sun, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
 import { auth, db } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
-import { useAuth, useManagers } from '../lib/hooks';
+import { useAuth, useManagers, useMassTimings } from '../lib/hooks';
+import { MassTimingsModal } from './SchedulePage';
 
 export default function ProfilePage() {
     const { user, loading, isManager } = useAuth();
     const { managers, addManager, removeManager } = useManagers();
+    const { defaultTimings, updateDefaultTimings } = useMassTimings();
     const [newManagerEmail, setNewManagerEmail] = useState('');
+    const [isDefaultTimingsOpen, setIsDefaultTimingsOpen] = useState(false);
 
     // Theme State
     const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -168,13 +171,54 @@ export default function ProfilePage() {
                     </div>
 
                     <button
-                        onClick={() => window.location.reload()}
+                        onClick={async () => {
+                            if ('serviceWorker' in navigator) {
+                                const registrations = await navigator.serviceWorker.getRegistrations();
+                                for (const registration of registrations) {
+                                    await registration.update();
+                                }
+                            }
+                            // Clear all caches
+                            if ('caches' in window) {
+                                const keys = await caches.keys();
+                                for (const key of keys) {
+                                    await caches.delete(key);
+                                }
+                            }
+                            window.location.reload();
+                        }}
                         className="w-full py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors"
                     >
-                        Force Reload
+                        Update App
                     </button>
                 </div>
             </div>
+
+            {/* Default Mass Timings Section (Only for Admins and Managers) */}
+            {isManager && (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-colors duration-200">
+                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-emerald-600 text-white rounded-lg">
+                                <Clock className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-white">Default Mass Timings</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Set the base schedule for new month generation</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-6">
+                        <button
+                            onClick={() => setIsDefaultTimingsOpen(true)}
+                            className="w-full py-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 rounded-xl text-sm font-bold uppercase tracking-wider hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Clock className="w-4 h-4" />
+                            Configure Default Timings
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Manage Managers Section (Only for Admins and Managers) */}
             {isManager && (
@@ -239,6 +283,18 @@ export default function ProfilePage() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {isDefaultTimingsOpen && (
+                <MassTimingsModal
+                    onClose={() => setIsDefaultTimingsOpen(false)}
+                    currentTimings={defaultTimings}
+                    onSave={async (timings) => {
+                        await updateDefaultTimings(timings);
+                        setIsDefaultTimingsOpen(false);
+                    }}
+                    title="Configure Default Mass Timings"
+                />
             )}
         </div>
     );

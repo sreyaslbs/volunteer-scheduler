@@ -175,7 +175,13 @@ body {
     /* Ensure content is transparent so watermark shows */
     .calendar-view-container,
     .calendar-view-container>div,
-    .calendar-view-container .bg-white {
+    .calendar-view-container .bg-white,
+    table,
+    tr,
+    td,
+    th,
+    .bg-white,
+    .bg-gray-50 {
         background: transparent !important;
     }
 

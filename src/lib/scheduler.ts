@@ -1,5 +1,5 @@
 import { startOfMonth, endOfMonth, eachDayOfInterval, isSaturday, isSunday, format, getWeek } from 'date-fns';
-import type { Volunteer, MonthlySchedule, Mass, Role } from '../types';
+import type { Volunteer, MonthlySchedule, Mass, Role, MassTiming } from '../types';
 import { Timestamp } from 'firebase/firestore';
 
 // Helper to safely convert any date-like object (Timestamp, Date, JS object from JSON) to a JS Date
@@ -47,7 +47,8 @@ export const generateSchedule = (
     volunteers: Volunteer[],
     year: number,
     month: number, // 0-indexed (0 = Jan)
-    existingMasses: Mass[] = []
+    existingMasses: Mass[] = [],
+    massTimings?: MassTiming[]
 ): MonthlySchedule => {
     // Safety check for inputs
     if (!Array.isArray(volunteers)) {
@@ -90,6 +91,7 @@ export const generateSchedule = (
         month,
         year,
         masses: [...massesToKeep],
+        massTimings: massTimings
     };
 
     // Tracking assignments to enforce constraints
@@ -123,32 +125,38 @@ export const generateSchedule = (
     });
 
     days.forEach(day => {
-        const isSat = isSaturday(day);
-        const isSun = isSunday(day);
         const dateStr = format(day, 'yyyy-MM-dd');
         const weekNum = getWeek(day);
-
+        const dayOfWeek = day.getDay();
         let dayMasses: Mass[] = [];
 
-        if (isSun) {
-            // Sunday Schedule: 6:00 AM, 7:30 AM, 9:00 AM, 10:30 AM, 4:00 PM, 5:30 PM, 7:00 PM
-            ['06:00', '07:30', '09:00', '10:30', '16:00', '17:30', '19:00'].forEach(time => {
-                dayMasses.push(createMass(day, time, 'Sunday'));
-            });
-        } else if (isSat) {
-            // Saturday Morning: 6:00 AM, 7:00 AM, 7:30 AM (Weekday type)
-            ['06:00', '07:00', '07:30'].forEach(time => {
-                dayMasses.push(createMass(day, time, 'Weekday'));
-            });
-            // Saturday Evening: Anticipated Sunday Masses - 5:30 PM, 6:30 PM, 7:30 PM
-            ['17:30', '18:30', '19:30'].forEach(time => {
-                dayMasses.push(createMass(day, time, 'Sunday'));
-            });
+        if (massTimings && massTimings.length > 0) {
+            // Use custom timings
+            massTimings
+                .filter(t => t.dayOfWeek === dayOfWeek)
+                .forEach(t => {
+                    dayMasses.push(createMass(day, t.time, t.type));
+                });
         } else {
-            // Weekday (Mon-Fri): 6:00 AM, 7:00 AM, 7:30 AM, 18:30 (6:30 PM)
-            ['06:00', '07:00', '07:30', '18:30'].forEach(time => {
-                dayMasses.push(createMass(day, time, 'Weekday'));
-            });
+            const isSat = isSaturday(day);
+            const isSun = isSunday(day);
+            // Default hardcoded logic (Fallbacks)
+            if (isSun) {
+                ['06:00', '07:30', '09:00', '10:30', '16:00', '17:30', '19:00'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Sunday'));
+                });
+            } else if (isSat) {
+                ['06:00', '07:00', '07:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Weekday'));
+                });
+                ['17:30', '18:30', '19:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Sunday'));
+                });
+            } else {
+                ['06:00', '07:00', '07:30', '18:30'].forEach(time => {
+                    dayMasses.push(createMass(day, time, 'Weekday'));
+                });
+            }
         }
 
         // Fill masses
@@ -317,7 +325,7 @@ export const buildStatsFromSchedule = (schedule: MonthlySchedule, volunteers: Vo
     });
 
     schedule.masses.forEach(mass => {
-        const date = (mass.date as any).toDate ? (mass.date as any).toDate() : new Date((mass.date as any).seconds * 1000);
+        const date = safeToDate(mass.date);
         const dateStr = format(date, 'yyyy-MM-dd');
         const weekNum = getWeek(date);
 
@@ -360,7 +368,7 @@ export const repairSchedule = (
 
     // 2. Find the mass(es) with conflict
     schedule.masses.forEach((mass: Mass) => {
-        const date = mass.date.toDate();
+        const date = safeToDate(mass.date);
         const dateStr = format(date, 'yyyy-MM-dd');
 
         if (dateStr === conflictingDateStr) {

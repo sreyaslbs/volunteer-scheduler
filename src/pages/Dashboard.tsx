@@ -19,8 +19,8 @@ export default function Dashboard() {
                             <Calendar className="w-6 h-6" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-gray-900">View Schedule</h3>
-                            <p className="text-sm text-gray-500">Upcoming masses and assignments</p>
+                            <h3 className="font-semibold text-gray-900">Manage Schedule</h3>
+                            <p className="text-sm text-gray-500">Generate, edit, and adjust masses</p>
                         </div>
                     </Link>
                 )}

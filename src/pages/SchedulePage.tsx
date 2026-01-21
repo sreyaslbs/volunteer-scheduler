@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { useVolunteers, useSchedule } from '../lib/hooks';
+import { useState, useRef, useEffect } from 'react';
+import { useVolunteers, useSchedule, useMassTimings, useAuth } from '../lib/hooks';
 import { generateSchedule, findBestCandidate, buildStatsFromSchedule } from '../lib/scheduler';
-import type { Role, Mass } from '../types';
-import { Calendar as CalendarIcon, Loader2, Plus, X, Edit2 } from 'lucide-react';
+import type { Role, Mass, MassTiming } from '../types';
+import { Calendar as CalendarIcon, Loader2, Plus, X, Edit2, Clock, Trash2 } from 'lucide-react';
 import { doc, setDoc, Timestamp, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { format, getWeek } from 'date-fns';
@@ -11,11 +11,15 @@ export default function SchedulePage() {
     const [month, setMonth] = useState(new Date().getMonth() + 1);
     const [year, setYear] = useState(new Date().getFullYear());
 
+    useAuth();
+
     const { volunteers, loading: volunteersLoading } = useVolunteers();
-    const { schedule, loading, setSchedule, fetchSchedule } = useSchedule(month, year);
+    const { schedule, loading, setSchedule, fetchSchedule, updateMonthMassTimings } = useSchedule(month, year);
+    const { defaultTimings } = useMassTimings();
 
     const [generating, setGenerating] = useState(false);
     const [isAddMassOpen, setIsAddMassOpen] = useState(false);
+    const [isTimingsOpen, setIsTimingsOpen] = useState(false);
     const [editingMassId, setEditingMassId] = useState<string | null>(null);
     const editingMass = editingMassId ? schedule?.masses.find((m: Mass) => m.id === editingMassId) : null;
 
@@ -113,6 +117,18 @@ export default function SchedulePage() {
         setEditingMassId(null);
     };
 
+    const handleDeleteMass = async (massId: string) => {
+        if (!schedule) return;
+        if (!window.confirm("Are you sure you want to delete this mass?")) return;
+
+        const updatedMasses = schedule.masses.filter((m: Mass) => m.id !== massId);
+        const updatedSchedule = { ...schedule, masses: updatedMasses };
+
+        setSchedule(updatedSchedule);
+        const scheduleId = `${year}-${String(month).padStart(2, '0')}`;
+        await setDoc(doc(db, 'schedules', scheduleId), updatedSchedule);
+    };
+
     // Month selection
     const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setMonth(parseInt(e.target.value));
@@ -126,8 +142,13 @@ export default function SchedulePage() {
         setGenerating(true);
 
         try {
+            // Use monthly overrides if they exist, otherwise use defaults
+            const currentTimings = (schedule?.massTimings && schedule.massTimings.length > 0)
+                ? schedule.massTimings
+                : defaultTimings;
+
             // logic: 0-indexed month for date-fns
-            const generated = generateSchedule(volunteers, year, month - 1, schedule?.masses || []);
+            const generated = generateSchedule(volunteers, year, month - 1, schedule?.masses || [], currentTimings);
 
             if (generated.id === 'error') {
                 throw new Error("Generator returned error state");
@@ -229,13 +250,22 @@ export default function SchedulePage() {
                 <div className="space-y-6">
 
                     <div className="flex justify-between items-center">
-                        <button
-                            onClick={() => setIsAddMassOpen(true)}
-                            className="text-sm px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium flex items-center gap-2"
-                        >
-                            <Plus className="w-4 h-4" />
-                            Add Special Mass
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setIsAddMassOpen(true)}
+                                className="text-sm px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 font-medium flex items-center gap-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                Add Special Mass
+                            </button>
+                            <button
+                                onClick={() => setIsTimingsOpen(true)}
+                                className="text-sm px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 font-medium flex items-center gap-2"
+                            >
+                                <Clock className="w-4 h-4" />
+                                Mass Timings
+                            </button>
+                        </div>
                         <button
                             onClick={handleGenerate}
                             disabled={generating}
@@ -305,13 +335,22 @@ export default function SchedulePage() {
                                                     {getVolunteerName(mass.assignments.Commentator)}
                                                 </td>
                                                 <td className="px-4 py-2 text-right">
-                                                    <button
-                                                        onClick={() => setEditingMassId(mass.id)}
-                                                        className="text-indigo-600 hover:text-indigo-800 p-1.5 rounded-full hover:bg-indigo-50 transition-colors"
-                                                        title="Edit Mass"
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
+                                                    <div className="flex justify-end gap-1">
+                                                        <button
+                                                            onClick={() => setEditingMassId(mass.id)}
+                                                            className="text-indigo-600 hover:text-indigo-800 p-1.5 rounded-full hover:bg-indigo-50 transition-colors"
+                                                            title="Edit Mass"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteMass(mass.id)}
+                                                            className="text-red-600 hover:text-red-800 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                                                            title="Delete Mass"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -321,6 +360,17 @@ export default function SchedulePage() {
                         </div>
                     </div>
                 </div>
+            )}
+            {isTimingsOpen && (
+                <MassTimingsModal
+                    onClose={() => setIsTimingsOpen(false)}
+                    currentTimings={schedule?.massTimings?.length ? schedule.massTimings : defaultTimings}
+                    onSave={async (timings) => {
+                        await updateMonthMassTimings(timings);
+                        setIsTimingsOpen(false);
+                    }}
+                    title={`Mass Timings for ${format(new Date(year, month - 1), 'MMMM yyyy')}`}
+                />
             )}
             {isAddMassOpen && (
                 <AddMassModal
@@ -337,6 +387,145 @@ export default function SchedulePage() {
                     onSave={(date, name, desc, highlighted) => handleEditMass(editingMass.id, date, name, desc, highlighted)}
                 />
             )}
+        </div>
+    );
+}
+
+export function MassTimingsModal({ onClose, currentTimings, onSave, title }: {
+    onClose: () => void,
+    currentTimings: MassTiming[],
+    onSave: (timings: MassTiming[]) => void,
+    title: string
+}) {
+    const [timings, setTimings] = useState<MassTiming[]>(() =>
+        [...currentTimings].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.time.localeCompare(b.time))
+    );
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const lastAddedId = useRef<string | null>(null);
+
+    const handleAddTime = () => {
+        const id = crypto.randomUUID();
+        lastAddedId.current = id;
+        setTimings([...timings, {
+            id,
+            dayOfWeek: 0,
+            time: '', // Empty time for user to fill
+            type: 'Sunday'
+        }]);
+    };
+
+    useEffect(() => {
+        if (lastAddedId.current && scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({
+                top: scrollContainerRef.current.scrollHeight,
+                behavior: 'smooth'
+            });
+            lastAddedId.current = null;
+        }
+    }, [timings.length]);
+
+    const handleRemoveTime = (id: string) => {
+        setTimings(timings.filter(t => t.id !== id));
+    };
+
+    const handleUpdateTiming = (id: string, updates: Partial<MassTiming>) => {
+        setTimings(timings.map(t => t.id === id ? { ...t, ...updates } : t));
+    };
+
+    const handleSave = () => {
+        // Filter out items with empty time and sort before saving
+        const validTimings = timings.filter(t => t.time !== '').sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.time.localeCompare(b.time));
+        onSave(validTimings);
+    };
+
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full p-6 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-gray-800 dark:text-white">{title}</h3>
+                    <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full">
+                        <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-4 pr-2" ref={scrollContainerRef}>
+                    <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-gray-500 uppercase px-2 sticky top-0 bg-white dark:bg-gray-800 z-10 py-1">
+                        <div className="col-span-4">Day</div>
+                        <div className="col-span-3">Time</div>
+                        <div className="col-span-3">Dress Code</div>
+                        <div className="col-span-2"></div>
+                    </div>
+
+                    <div className="space-y-2">
+                        {timings.map((t) => (
+                            <div key={t.id} className="grid grid-cols-12 gap-2 items-center bg-gray-50 dark:bg-gray-900/50 p-2 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <div className="col-span-4">
+                                    <select
+                                        value={t.dayOfWeek}
+                                        onChange={(e) => handleUpdateTiming(t.id, { dayOfWeek: parseInt(e.target.value) })}
+                                        className="w-full text-sm bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-md p-1.5"
+                                    >
+                                        {days.map((day, i) => (
+                                            <option key={i} value={i}>{day}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="col-span-3">
+                                    <input
+                                        type="time"
+                                        value={t.time}
+                                        onChange={(e) => handleUpdateTiming(t.id, { time: e.target.value })}
+                                        className="w-full text-sm bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-md p-1.5"
+                                    />
+                                </div>
+                                <div className="col-span-3">
+                                    <select
+                                        value={t.type}
+                                        onChange={(e) => handleUpdateTiming(t.id, { type: e.target.value as any })}
+                                        className="w-full text-sm bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 rounded-md p-1.5"
+                                    >
+                                        <option value="Weekday">Weekday (Casual)</option>
+                                        <option value="Sunday">Sunday (Formal)</option>
+                                    </select>
+                                </div>
+                                <div className="col-span-2 text-right">
+                                    <button
+                                        onClick={() => handleRemoveTime(t.id)}
+                                        className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <button
+                        onClick={handleAddTime}
+                        className="w-full py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-500 hover:border-indigo-500 hover:text-indigo-500 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Mass Timing
+                    </button>
+                </div>
+
+                <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-700 flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 font-medium text-sm"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium text-sm"
+                    >
+                        Save for this Month
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
